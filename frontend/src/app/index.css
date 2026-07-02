@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+/*
+ * ConfigFlow design tokens (docs/06-ui-design.md §3).
+ * Dark is the default theme (:root). Light overrides live on `.light`
+ * so a future theme toggle only needs to add the class to <html>.
+ * Note: Tailwind v4 is configured in CSS (@theme) instead of tailwind.config.ts.
+ */
+:root {
+  color-scheme: dark;
+
+  --cf-bg-base: #1e1f24;
+  --cf-bg-panel: #26272e;
+  --cf-bg-elevated: #2e3038;
+  --cf-border: #3a3d47;
+  --cf-text-primary: #e6e7eb;
+  --cf-text-muted: #9a9daa;
+  --cf-accent: #4f8cff;
+  --cf-vcs-added: #3fb950;
+  --cf-vcs-modified: #d29922;
+  --cf-vcs-deleted: #f85149;
+  --cf-vcs-conflicted: #ff7b72;
+  --cf-vcs-renamed: #a371f7;
+}
+
+.light {
+  color-scheme: light;
+
+  --cf-bg-base: #f6f7f9;
+  --cf-bg-panel: #ffffff;
+  --cf-bg-elevated: #ffffff;
+  --cf-border: #d6d9e0;
+  --cf-text-primary: #1c1e26;
+  --cf-text-muted: #5c6070;
+  --cf-accent: #2f6fe0;
+  --cf-vcs-added: #1a7f37;
+  --cf-vcs-modified: #9a6700;
+  --cf-vcs-deleted: #cf222e;
+  --cf-vcs-conflicted: #d1242f;
+  --cf-vcs-renamed: #8250df;
+}
+
+/* Map tokens into the Tailwind theme so `bg-panel`, `text-vcs-added`,
+ * `border-border`, `text-muted`, ... utilities work. */
+@theme inline {
+  --color-base: var(--cf-bg-base);
+  --color-panel: var(--cf-bg-panel);
+  --color-elevated: var(--cf-bg-elevated);
+  --color-border: var(--cf-border);
+  --color-primary: var(--cf-text-primary);
+  --color-muted: var(--cf-text-muted);
+  --color-accent: var(--cf-accent);
+  --color-vcs-added: var(--cf-vcs-added);
+  --color-vcs-modified: var(--cf-vcs-modified);
+  --color-vcs-deleted: var(--cf-vcs-deleted);
+  --color-vcs-conflicted: var(--cf-vcs-conflicted);
+  --color-vcs-renamed: var(--cf-vcs-renamed);
+
+  --font-sans:
+    'Segoe UI', 'SF Pro Text', 'Noto Sans KR', system-ui, -apple-system,
+    sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: var(--cf-bg-base);
+  color: var(--cf-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}

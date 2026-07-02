@@ -1,0 +1,40 @@
+# electron-builder configuration — SKELETON (packaging is milestone M5).
+# Verify paths and add icons/signing before the first real package build.
+
+appId: dev.configflow.app
+productName: ConfigFlow
+
+directories:
+  output: release
+  buildResources: ../installer
+
+files:
+  - dist/**
+  - package.json
+  # TODO(M5): bundle the built frontend into the app so
+  # resolveProductionIndex() finds it at <appPath>/frontend/dist/index.html:
+  # - from: ../frontend/dist
+  #   to: frontend/dist
+
+extraResources:
+  # TODO(M5): backend fat jar — resolved at runtime via glob bootstrap*.jar
+  # in <resources>/backend (see src/main/backend-launcher.ts).
+  # - from: ../backend/bootstrap/build/libs/
+  #   to: backend/
+  #   filter:
+  #     - bootstrap*.jar
+  #
+  # TODO(M5): minimal JRE produced by jlink (see installer/ scripts) — looked
+  # up at <resources>/jre/bin/java(.exe) before falling back to PATH.
+  # - from: ../installer/jre/
+  #   to: jre/
+
+win:
+  target:
+    - nsis
+  # TODO(M5): icon: ../installer/icons/configflow.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # TODO(M5): license, installer artwork
