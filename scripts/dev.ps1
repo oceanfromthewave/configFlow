@@ -14,6 +14,20 @@ $root = Split-Path -Parent $PSScriptRoot
 $BackendPort = 8465
 $DevToken    = 'dev-token'
 
+# JAVA_HOME이 유효하지 않으면(예: 삭제된 드라이브를 가리킴) 설치된 JDK를 탐색해 재지정한다.
+# JDK 21 우선(jar 실행 겸용), 없으면 Gradle 구동용으로 17+ 아무거나.
+if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
+    $candidates = @(
+        "$env:USERPROFILE\.jdks\ms-21.0.11",
+        "$env:USERPROFILE\.jdks\corretto-21.0.11"
+    ) + (Get-ChildItem "$env:USERPROFILE\.jdks" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName) `
+      + (Get-ChildItem 'C:\Program Files\Java' -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -ExpandProperty FullName)
+    foreach ($c in $candidates) {
+        if (Test-Path "$c\bin\java.exe") { $env:JAVA_HOME = $c; break }
+    }
+    Write-Host "[ConfigFlow] JAVA_HOME 보정 → $env:JAVA_HOME" -ForegroundColor Yellow
+}
+
 Write-Host "[ConfigFlow] backend 기동 (port=$BackendPort)..." -ForegroundColor Cyan
 $backend = Start-Process -PassThru -WorkingDirectory "$root\backend" -FilePath "$root\backend\gradlew.bat" `
     -ArgumentList "bootRun", "--args=--server.port=$BackendPort --configflow.token=$DevToken"
