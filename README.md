@@ -45,4 +45,15 @@ installer/   인스톨러 리소스
 
 ## 상태
 
-**설계 단계 완료 → M0(스캐폴딩) 착수 대기.** 로드맵은 [08-task-breakdown](docs/08-task-breakdown.md) 참조.
+**M0(스캐폴딩) 완료 → M1(Git 코어) 착수 대기.** 로드맵은 [08-task-breakdown](docs/08-task-breakdown.md) 참조.
+
+### 개발 시작하기
+
+```powershell
+.\scripts\dev.ps1              # backend(8465) + frontend(5173) + electron
+.\scripts\dev.ps1 -NoDesktop   # 브라우저 모드 (http://localhost:5173)
+.\scripts\build.ps1            # 전체 빌드 (backend → frontend → desktop)
+```
+
+- 요구 사항: Node 20+, JDK(컴파일용 JDK 21은 Gradle toolchain이 자동 확보)
+- 개발 모드 백엔드 인증 토큰: `dev-token` (헤더 `X-ConfigFlow-Token`)
