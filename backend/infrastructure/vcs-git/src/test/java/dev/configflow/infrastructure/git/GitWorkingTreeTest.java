@@ -1,10 +1,12 @@
 package dev.configflow.infrastructure.git;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.configflow.domain.vcs.model.ChangeType;
 import dev.configflow.domain.vcs.model.FileChange;
+import dev.configflow.domain.vcs.model.IgnorePattern;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
@@ -75,6 +77,58 @@ class GitWorkingTreeTest {
 		add("app.txt");
 		WorkingTreeStatus afterAdd = workingTree.status(handle);
 		assertTrue(hasChange(afterAdd.staged(), "app.txt", ChangeType.MODIFIED));
+	}
+
+	@Test
+	void stage_movesUntrackedFileIntoStaged() throws Exception {
+		writeFile("new.txt", "hello");
+
+		workingTree.stage(handle, List.of(Path.of("new.txt")));
+
+		WorkingTreeStatus status = workingTree.status(handle);
+		assertTrue(hasChange(status.staged(), "new.txt", ChangeType.ADDED));
+		assertTrue(status.unstaged().isEmpty());
+	}
+
+	@Test
+	void unstage_movesStagedModificationBackToUnstaged() throws Exception {
+		commitFile("app.txt", "first version");
+		writeFile("app.txt", "second version is longer");
+		add("app.txt"); // now staged as MODIFIED
+
+		workingTree.unstage(handle, List.of(Path.of("app.txt")));
+
+		WorkingTreeStatus status = workingTree.status(handle);
+		assertTrue(status.staged().isEmpty());
+		assertTrue(hasChange(status.unstaged(), "app.txt", ChangeType.MODIFIED));
+	}
+
+	@Test
+	void discard_restoresCommittedContent() throws Exception {
+		commitFile("app.txt", "first version");
+		writeFile("app.txt", "unwanted change is longer");
+
+		workingTree.discard(handle, List.of(Path.of("app.txt")));
+
+		WorkingTreeStatus status = workingTree.status(handle);
+		assertTrue(status.isClean());
+		assertEquals("first version", Files.readString(repoDir.resolve("app.txt")));
+	}
+
+	@Test
+	void ignore_addsRuleOnceAndHidesMatchingFile() throws Exception {
+		writeFile("debug.log", "noise");
+		assertTrue(hasChange(workingTree.status(handle).unstaged(), "debug.log", ChangeType.UNTRACKED));
+
+		workingTree.ignore(handle, new IgnorePattern("*.log"));
+		workingTree.ignore(handle, new IgnorePattern("*.log")); // dedup
+
+		WorkingTreeStatus status = workingTree.status(handle);
+		assertFalse(hasChange(status.unstaged(), "debug.log", ChangeType.UNTRACKED));
+
+		List<String> lines = Files.readAllLines(repoDir.resolve(".gitignore"));
+		long count = lines.stream().filter(l -> l.strip().equals("*.log")).count();
+		assertEquals(1, count);
 	}
 
 	// --- fixture helpers -------------------------------------------------
