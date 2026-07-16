@@ -12,7 +12,7 @@ reviews:
   review_status: true
   auto_review:
     enabled: true
-    drafts: true            # Draft PR도 리뷰 (WIP 브랜치를 계속 봐줌)
+    drafts: false           # Draft PR은 리뷰 안 함 → "Ready for review"로 표시할 때 한 번에 리뷰
   # 리뷰할 필요 없는 산출물/자동생성물 제외
   path_filters:
     - "!**/build/**"
