@@ -1,0 +1,39 @@
+# CodeRabbit 리뷰 설정 — https://docs.coderabbit.ai/reference/configuration
+# 이 파일이 저장소에 있으면 CodeRabbit(GitHub App)이 PR을 자동 리뷰할 때 이 규칙을 따릅니다.
+language: ko-KR
+
+reviews:
+  # chill = 핵심 위주로 부드럽게, assertive = 더 깐깐하게. 학습 중이면 assertive도 유용.
+  profile: chill
+  # 리뷰가 있어도 자동으로 "변경 요청(블로킹)" 상태로 만들지 않음 (혼자 개발이라 병합은 내가 결정)
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: true            # Draft PR도 리뷰 (WIP 브랜치를 계속 봐줌)
+  # 리뷰할 필요 없는 산출물/자동생성물 제외
+  path_filters:
+    - "!**/build/**"
+    - "!**/dist/**"
+    - "!**/node_modules/**"
+    - "!**/*.lock"
+    - "!**/gradlew*"
+    - "!**/gradle/wrapper/**"
+  # 이 프로젝트의 아키텍처 규칙을 리뷰어에게 각인 (경로별 지침)
+  path_instructions:
+    - path: "backend/domain/**/*.java"
+      instructions: >
+        domain 모듈은 순수 Java여야 한다. Spring, JGit, SVNKit 등 프레임워크/엔진 타입에
+        의존하면 지적하라. 모델은 불변(record) 우선.
+    - path: "backend/infrastructure/**/*.java"
+      instructions: >
+        인프라 어댑터는 엔진(JGit/SVNKit) 예외를 도메인 VcsException 계층으로 번역해야 한다.
+        자원(Git/Repository 등 AutoCloseable)은 try-with-resources로 닫는지 확인하라.
+    - path: "frontend/src/**/*.{ts,tsx}"
+      instructions: >
+        Feature-Sliced 구조를 따르는지, 사용자 노출 문자열이 i18n을 거치는지 확인하라.
+
+chat:
+  auto_reply: true
