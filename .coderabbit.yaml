@@ -1,18 +1,22 @@
 # CodeRabbit 리뷰 설정 — https://docs.coderabbit.ai/reference/configuration
-# 이 파일이 저장소에 있으면 CodeRabbit(GitHub App)이 PR을 자동 리뷰할 때 이 규칙을 따릅니다.
+# 이 파일이 저장소에 있으면 CodeRabbit(GitHub App)이 PR을 리뷰할 때 이 규칙을 따릅니다.
 language: ko-KR
+early_access: false
+enable_free_tier: true            # 공개 저장소 무료 플랜 기능 사용
 
 reviews:
-  # chill = 핵심 위주로 부드럽게, assertive = 더 깐깐하게. 학습 중이면 assertive도 유용.
+  # chill = 핵심 위주로 부드럽게, assertive = 더 깐깐하게.
   profile: chill
-  # 리뷰가 있어도 자동으로 "변경 요청(블로킹)" 상태로 만들지 않음 (혼자 개발이라 병합은 내가 결정)
   request_changes_workflow: false
   high_level_summary: true
   poem: false
-  review_status: true
+  review_status: false            # PR마다 "리뷰 상태" 코멘트를 남기지 않아 노이즈 감소
   auto_review:
     enabled: true
-    drafts: false           # Draft PR은 리뷰 안 함 → "Ready for review"로 표시할 때 한 번에 리뷰
+    auto_incremental_review: false  # ★ 매 푸시마다 재리뷰하지 않음 (WIP 커밋 스팸 방지)
+    drafts: false                   # Draft 동안엔 리뷰 안 함 → Ready로 표시할 때 1회 리뷰
+    base_branches:
+      - main                        # main을 향한 PR만 자동 리뷰
   # 리뷰할 필요 없는 산출물/자동생성물 제외
   path_filters:
     - "!**/build/**"
