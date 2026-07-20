@@ -79,13 +79,15 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void healthWithQueryParamTokenIsAccepted() {
-        // EventSource cannot set headers, so ?token= must work as well.
-        ResponseEntity<Map> response = rest.getForEntity("/api/v1/health?token=test-token", Map.class);
+    void healthWithQueryParamTokenIsRejected() {
+        // Only the SSE stream may authenticate via ?token=; on a regular endpoint a
+        // token in the URL would leak through access logs, history and referrers.
+        ResponseEntity<String> response =
+                rest.getForEntity("/api/v1/health?token=test-token", String.class);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("UP", response.getBody().get("status"));
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().contains("AUTH_TOKEN_INVALID"));
     }
 
     @Test
