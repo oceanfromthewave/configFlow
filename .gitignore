@@ -35,3 +35,8 @@ Thumbs.db
 
 # Gradle
 .gradle/
+
+# Personal work log: a local session journal, not part of the product.
+# Project history lives in commit messages; keeping this out of the repo
+# avoids polluting PR diffs and creating conflicts across branches.
+record.md

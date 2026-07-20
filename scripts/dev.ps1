@@ -1,4 +1,4 @@
-# ConfigFlow 통합 개발 기동 스크립트
+﻿# ConfigFlow 통합 개발 기동 스크립트
 # backend(8465) + frontend(5173) + electron을 함께 띄운다.
 # 사용법:
 #   .\scripts\dev.ps1              # 전체 기동
