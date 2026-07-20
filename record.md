@@ -93,3 +93,32 @@ SourceTree/TortoiseSVN을 대체하는 통합 형상관리 클라이언트 "Conf
   - 디버깅: staged 매핑 3줄이 모두 getAdded() 오타 → getChanged()/getRemoved()로 수정 (진단용 임시 테스트로 원인 규명 후 삭제)
 - git 워크플로우 도입: feature/m1-git-core 브랜치 생성, 미커밋 작업을 3개 논리 커밋으로 정리.
 - CodeRabbit 도입: 루트에 .coderabbit.yaml 추가(ko-KR, 아키텍처 규칙 path_instructions 포함). 앱 설치·PR 생성은 사용자 GitHub 계정에서 수행 예정(gh CLI 미설치).
+
+## 2026-07-16 16:39 - M1 WorkingTree 조작 구현 + 커밋/푸시 정리 (세션 종료)
+
+### Input
+- "너가 마지막으로 보낸거 반영하고 푸시" / CodeRabbit 리뷰 노이즈 조정 / "오늘은 여기까지"
+
+### Output
+- GitWorkingTree에 stage/unstage/discard/ignore 구현(사용자 작성). IgnorePattern 접근자 오타(value→pattern) 수정.
+- 테스트 4개 추가(메인 에이전트 반영): stage/unstage/discard(내용복원)/ignore(멱등). vcs-git 테스트 총 8개 초록불.
+- 커밋 정리: feat(구현)/test(테스트)/chore(coderabbit) 분리. 실수로 구현 파일을 빠뜨리고 테스트만 커밋했다가(브랜치 tip 깨짐) 바로 feat 커밋으로 복구.
+- CodeRabbit 튜닝: auto_incremental_review:false(매 푸시 재리뷰 방지), review_status:false, base_branches:[main]. 한국어+아키텍처 규칙 유지.
+- 브랜치 feature/m1-git-core 전부 push 완료(5a05400). 작업트리 clean.
+
+### 다음 재개 지점
+- M1 Step 6: GitVcsProvider가 WorkingTreeOperations를 implements 하고 GitWorkingTree에 위임(겉-속 연결). 이후 commit/history → diff → clone/fetch/pull/push 순.
+
+## 2026-07-20 09:20 - M1 Step 6/7: GitVcsProvider ↔ WorkingTreeOperations 연결
+
+### Input
+"어디까지 했고 이제 뭐해야하지?" → 상태 점검 후 Step 6 진행.
+
+### Output
+- GitVcsProvider가 WorkingTreeOperations를 implements 하고 GitWorkingTree에 전 메서드 위임(겉-속 연결 완성).
+- 생성자 2개: public 무인자(프레임워크 배선용) + package-private(테스트 이음새, DI).
+- GitVcsProviderTest 신규 4개: type/capability 선언, detect·open의 수용/거절 케이스, 그리고 포트 타입으로만 접근해 capability 확인 → instanceof 축소 → stage 수행하는 아키텍처 계약 검증.
+- vcs-git 테스트 총 12개 초록불(Provider 4 + WorkingTree 8).
+
+### 다음 재개 지점
+- 택1: (a) CodeRabbit 지적 반영 — 쿼리파라미터 토큰 인증을 SSE 엔드포인트로만 제한(보안), (b) M1 계속 — commit/amend → history/show → diff → clone/fetch/pull/push.
