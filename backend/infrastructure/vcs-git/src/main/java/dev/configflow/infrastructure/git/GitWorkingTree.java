@@ -64,7 +64,7 @@ final class GitWorkingTree
 		try (Git git = access.open(repo)) {
 			var add = git.add();
 			for (Path path : paths) {
-				add.addFilepattern(toGitPath(path));
+				add.addFilepattern(GitPaths.toGitPath(path));
 			}
 			// setUpdate(false) 이므로 신규 파일도 포함해 스테이징한다 (기본값).
 			add.call();
@@ -81,7 +81,7 @@ final class GitWorkingTree
 		try (Git git = access.open(repo)) {
 			var reset = git.reset();
 			for (Path path : paths) {
-				reset.addPath(toGitPath(path));
+				reset.addPath(GitPaths.toGitPath(path));
 			}
 			// mode 미지정 = MIXED: 인덱스만 HEAD로 되돌리고 작업트리 파일은 건드리지 않는다.
 			reset.call();
@@ -98,7 +98,7 @@ final class GitWorkingTree
 		try (Git git = access.open(repo)) {
 			var checkout = git.checkout();
 			for (Path path : paths) {
-				checkout.addPath(toGitPath(path));
+				checkout.addPath(GitPaths.toGitPath(path));
 			}
 			// 인덱스/HEAD의 내용으로 작업트리 파일을 덮어써 수정 이전으로 되돌린다.
 			checkout.call();
@@ -124,12 +124,6 @@ final class GitWorkingTree
 			throw new VcsException("Failed to update .gitignore in " + repo.localPath(), e);
 		}
 	}
-
-	/** Converts an OS path (possibly with backslashes on Windows) to a Git path ('/'). */
-	private static String toGitPath(Path path) {
-		return path.toString().replace('\\', '/');
-	}
-
 
 	private static void collect(List<FileChange> target, Set<String> paths, ChangeType type, Set<String> exclude)
 	{

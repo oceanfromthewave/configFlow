@@ -137,3 +137,19 @@ SourceTree/TortoiseSVN을 대체하는 통합 형상관리 클라이언트 "Conf
 
 ### 다음 재개 지점
 - M1 계속: commit/amend 구현 → history/show → diff → clone/fetch/pull/push+인증.
+
+## 2026-07-20 15:02 - M1: commit/amend + history 구현 (feature/m1-commit-history)
+
+### Input
+"너가 작성하고 history구현까지하고 푸쉬해"
+
+### Output
+- PR #1 머지(rebase) 후 로컬 정리: main 최신화, feature/m1-git-core 삭제, feature/m1-commit-history 생성.
+- GitCommits 신규: commit/amend(인덱스 커밋, paths는 SVN용이라 미사용 문서화), history(커서 페이징 + branch/author/message/path/기간 필터, parent 연결, HEAD/branch/remote/tag 라벨).
+- GitPaths 유틸 추출: toGitPath를 GitWorkingTree private에서 공용으로(두 번째 사용처 발생 → DRY).
+- 디버깅: JGit 7 API 확인 — AuthorRevFilter/MessageRevFilter는 contains가 아니라 create. javap로 실제 시그니처 조사 후 수정. 시간 필터는 Date 대신 Instant 오버로드 사용(도메인과 일치).
+- GitCommitsTest 신규 11개: 커밋/스테이지된 것만 커밋/amend(SHA 교체·개수 유지), history 최신순·커서 페이징 중복없음·message/author/path 필터·라벨·부모연결·빈 저장소.
+- 검증: vcs-git 23개 초록불, backend 전체 build 성공.
+
+### 다음 재개 지점
+- show(RevisionId) 구현 → GitVcsProvider에 CommitOperations 연결 → diff → clone/fetch/pull/push.
