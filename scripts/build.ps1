@@ -1,4 +1,4 @@
-# ConfigFlow 전체 빌드 스크립트
+﻿# ConfigFlow 전체 빌드 스크립트
 # backend(jar) → frontend(dist) → desktop(compile) 순서로 빌드하고 실패 시 중단한다.
 
 $ErrorActionPreference = 'Stop'
