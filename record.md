@@ -122,3 +122,18 @@ SourceTree/TortoiseSVN을 대체하는 통합 형상관리 클라이언트 "Conf
 
 ### 다음 재개 지점
 - 택1: (a) CodeRabbit 지적 반영 — 쿼리파라미터 토큰 인증을 SSE 엔드포인트로만 제한(보안), (b) M1 계속 — commit/amend → history/show → diff → clone/fetch/pull/push.
+
+## 2026-07-20 14:39 - CodeRabbit 보안 지적 반영: 쿼리파라미터 토큰을 SSE 전용으로 제한
+
+### Input
+"너가 알아서 수정해주고 푸쉬까지 진행혀"
+
+### Output
+- TokenAuthFilter: 헤더가 기본 전송수단, ?token= 폴백은 /api/v1/events(SSE)에서만 허용. contextPath 제거 후 경로 비교.
+- 사용자 작성분 버그 수정: isSseRequest에서 getRequestId() → getRequestURI(). 타입이 같아 컴파일은 통과하지만 항상 false가 되어 SSE 인증까지 막히는 문제였음. (신규 SSE 단위 테스트가 이걸 잡는 안전망)
+- ApiIntegrationTest: healthWithQueryParamTokenIsAccepted → healthWithQueryParamTokenIsRejected 로 단언 반전(회귀 방지).
+- TokenAuthFilterTest 신규 5개: 헤더 인증, SSE에서만 쿼리 인증 허용, 일반 엔드포인트 쿼리 거부, 잘못된 토큰, 토큰 누락. MockHttpServletRequest/MockFilterChain 사용(실제 SSE 연결 안 열어 테스트가 멈추지 않음).
+- 검증: bootstrap 15개 초록불, backend 전체 build 성공.
+
+### 다음 재개 지점
+- M1 계속: commit/amend 구현 → history/show → diff → clone/fetch/pull/push+인증.
