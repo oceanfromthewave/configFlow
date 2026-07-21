@@ -52,11 +52,22 @@
   "welcome.registerFailed": "Registration failed",
   "welcome.loading": "Loading repositories…",
   "welcome.loadFailed": "Could not load repositories",
+  "welcome.openFailed": "Could not open the repository",
   "workingTree.staged": "Staged",
   "workingTree.unstaged": "Changes",
   "workingTree.conflicted": "Conflicts",
   "workingTree.cleanTitle": "No changes",
   "workingTree.cleanDescription": "The working tree is clean.",
   "workingTree.loading": "Loading status…",
-  "workingTree.loadFailed": "Could not load the working-tree status"
+  "workingTree.loadFailed": "Could not load the working-tree status",
+  "workingTree.resolutionUnresolved": "unresolved",
+  "workingTree.resolutionMine": "kept mine",
+  "workingTree.resolutionTheirs": "kept theirs",
+  "workingTree.resolutionManual": "resolved manually",
+  "error.validation": "The request was rejected",
+  "error.notFound": "Not found",
+  "error.capabilityNotSupported": "This VCS does not support that operation",
+  "error.network": "Cannot reach the backend",
+  "error.internal": "A server error occurred",
+  "error.unknown": "Something went wrong"
 }

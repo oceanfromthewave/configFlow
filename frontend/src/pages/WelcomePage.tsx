@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react'
 
-import type { RepositorySummary } from '@/entities/repository/model/types'
 import {
   useOpenRepository,
   useRegisterRepository,
   useRepositories,
-} from '@/shared/api/repositories'
+} from '@/entities/repository/api/repositories'
+import type { RepositorySummary } from '@/entities/repository/model/types'
 import { useT } from '@/shared/i18n'
+import { apiErrorKey } from '@/shared/lib/apiErrorMessage'
 import { useUiStore } from '@/shared/lib/uiStore'
 import { Badge, Button, EmptyState, Spinner } from '@/shared/ui'
 
@@ -67,9 +68,12 @@ export function WelcomePage() {
   const favorites = all.filter((repo) => repo.favorite)
 
   function open(repository: RepositorySummary) {
-    // Record the visit server-side, then switch the workspace to it.
-    openRepository.mutate(repository.id)
-    showRepository(repository.id)
+    // Only switch the workspace once the server confirmed the repository is
+    // still there: navigating first would land on a panel whose every query
+    // fails (deleted folder, revoked permissions, ...).
+    openRepository.mutate(repository.id, {
+      onSuccess: () => showRepository(repository.id),
+    })
   }
 
   function submitPath(event: FormEvent<HTMLFormElement>) {
@@ -130,7 +134,7 @@ export function WelcomePage() {
               {registerRepository.isError ? (
                 <p className="text-xs text-vcs-deleted">
                   {t('welcome.registerFailed')}:{' '}
-                  {registerRepository.error.message}
+                  {t(apiErrorKey(registerRepository.error))}
                 </p>
               ) : null}
             </form>
@@ -146,6 +150,12 @@ export function WelcomePage() {
           <p className="text-sm text-vcs-deleted">{t('welcome.loadFailed')}</p>
         ) : (
           <>
+            {openRepository.isError ? (
+              <p className="text-sm text-vcs-deleted">
+                {t('welcome.openFailed')}: {t(apiErrorKey(openRepository.error))}
+              </p>
+            ) : null}
+
             <section className="flex flex-col gap-2">
               <h2 className="select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
                 {t('welcome.favorites')}
