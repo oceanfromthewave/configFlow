@@ -9,7 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import dev.configflow.application.repository.RepositoryService;
 import dev.configflow.domain.repository.Repository;
+import dev.configflow.domain.vcs.model.ChangeType;
+import dev.configflow.domain.vcs.model.FileChange;
 import dev.configflow.domain.vcs.model.VcsType;
+import dev.configflow.domain.vcs.model.WorkingTreeStatus;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -101,5 +104,21 @@ class RepositoryControllerTest {
         mvc.perform(post("/api/v1/repositories/not-a-uuid/open"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void status_returnsBucketsAsJson() throws Exception {
+        WorkingTreeStatus status = new WorkingTreeStatus(
+                List.of(FileChange.of(Path.of("staged.txt"), ChangeType.ADDED)),
+                List.of(FileChange.of(Path.of("changed.txt"), ChangeType.MODIFIED)),
+                List.of());
+        when(repositoryService.status(any())).thenReturn(status);
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.staged[0].path").value("staged.txt"))
+                .andExpect(jsonPath("$.staged[0].type").value("ADDED"))
+                .andExpect(jsonPath("$.unstaged[0].type").value("MODIFIED"))
+                .andExpect(jsonPath("$.conflicted").isEmpty());
     }
 }
