@@ -51,5 +51,12 @@
   "welcome.registering": "등록 중…",
   "welcome.registerFailed": "등록 실패",
   "welcome.loading": "저장소를 불러오는 중…",
-  "welcome.loadFailed": "저장소 목록을 불러오지 못했습니다"
+  "welcome.loadFailed": "저장소 목록을 불러오지 못했습니다",
+  "workingTree.staged": "스테이지됨",
+  "workingTree.unstaged": "변경사항",
+  "workingTree.conflicted": "충돌",
+  "workingTree.cleanTitle": "변경사항이 없습니다",
+  "workingTree.cleanDescription": "작업 트리가 깨끗합니다.",
+  "workingTree.loading": "상태를 불러오는 중…",
+  "workingTree.loadFailed": "작업 트리 상태를 불러오지 못했습니다"
 }
