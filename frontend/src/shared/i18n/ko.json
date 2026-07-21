@@ -45,5 +45,11 @@
   "welcome.favoritesEmptyDescription": "자주 사용하는 저장소를 즐겨찾기에 추가하면 여기에 표시됩니다.",
   "welcome.recentEmptyTitle": "최근 연 저장소가 없습니다",
   "welcome.recentEmptyDescription": "저장소를 열면 최근 목록에 표시됩니다.",
-  "welcome.comingSoon": "추후 지원"
+  "welcome.comingSoon": "추후 지원",
+  "welcome.addLocalPlaceholder": "저장소 폴더 경로 (예: C:\\dev\\myrepo)",
+  "welcome.addLocalSubmit": "등록",
+  "welcome.registering": "등록 중…",
+  "welcome.registerFailed": "등록 실패",
+  "welcome.loading": "저장소를 불러오는 중…",
+  "welcome.loadFailed": "저장소 목록을 불러오지 못했습니다"
 }

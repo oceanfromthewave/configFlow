@@ -1,19 +1,25 @@
-import type { RepositorySummary } from '@/entities/repository/model/types'
-import { useT } from '@/shared/i18n'
-import { Badge, Button, EmptyState } from '@/shared/ui'
+import { useState, type FormEvent } from 'react'
 
-/** Mock data until `GET /repositories` is wired up in a later milestone. */
-const favoriteRepositories: RepositorySummary[] = []
-const recentRepositories: RepositorySummary[] = []
+import type { RepositorySummary } from '@/entities/repository/model/types'
+import {
+  useOpenRepository,
+  useRegisterRepository,
+  useRepositories,
+} from '@/shared/api/repositories'
+import { useT } from '@/shared/i18n'
+import { useUiStore } from '@/shared/lib/uiStore'
+import { Badge, Button, EmptyState, Spinner } from '@/shared/ui'
 
 function RepositoryGrid({
   repositories,
   emptyTitle,
   emptyDescription,
+  onOpen,
 }: {
   repositories: RepositorySummary[]
   emptyTitle: string
   emptyDescription: string
+  onOpen: (repository: RepositorySummary) => void
 }) {
   if (repositories.length === 0) {
     return (
@@ -29,6 +35,7 @@ function RepositoryGrid({
         <button
           key={repo.id}
           type="button"
+          onClick={() => onOpen(repo)}
           className="flex flex-col gap-1 rounded-lg border border-border bg-elevated p-3 text-left outline-none hover:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/60"
         >
           <span className="flex items-center gap-2 text-sm font-medium text-primary">
@@ -44,9 +51,38 @@ function RepositoryGrid({
   )
 }
 
-/** Welcome screen (docs/06 §2): favorites + recent grid, 3 main actions. */
+/** Welcome screen (docs/06 §2): favorites + recent, wired to the repository API. */
 export function WelcomePage() {
   const t = useT()
+  const showRepository = useUiStore((s) => s.openRepository)
+
+  const repositories = useRepositories()
+  const registerRepository = useRegisterRepository()
+  const openRepository = useOpenRepository()
+
+  const [pathFormOpen, setPathFormOpen] = useState(false)
+  const [localPath, setLocalPath] = useState('')
+
+  const all = repositories.data ?? []
+  const favorites = all.filter((repo) => repo.favorite)
+
+  function open(repository: RepositorySummary) {
+    // Record the visit server-side, then switch the workspace to it.
+    openRepository.mutate(repository.id)
+    showRepository(repository.id)
+  }
+
+  function submitPath(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmed = localPath.trim()
+    if (trimmed.length === 0) return
+    registerRepository.mutate(trimmed, {
+      onSuccess: () => {
+        setLocalPath('')
+        setPathFormOpen(false)
+      },
+    })
+  }
 
   return (
     <div className="h-full overflow-y-auto bg-base">
@@ -58,39 +94,83 @@ export function WelcomePage() {
           <p className="text-sm text-muted">{t('welcome.subtitle')}</p>
         </header>
 
-        <div className="flex gap-2">
-          <Button variant="primary" disabled title={t('welcome.comingSoon')}>
-            {t('welcome.clone')}
-          </Button>
-          <Button disabled title={t('welcome.comingSoon')}>
-            {t('welcome.addLocal')}
-          </Button>
-          <Button disabled title={t('welcome.comingSoon')}>
-            {t('welcome.init')}
-          </Button>
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-2">
+            <Button variant="primary" disabled title={t('welcome.comingSoon')}>
+              {t('welcome.clone')}
+            </Button>
+            <Button onClick={() => setPathFormOpen((isOpen) => !isOpen)}>
+              {t('welcome.addLocal')}
+            </Button>
+            <Button disabled title={t('welcome.comingSoon')}>
+              {t('welcome.init')}
+            </Button>
+          </div>
+
+          {pathFormOpen ? (
+            <form onSubmit={submitPath} className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={localPath}
+                  onChange={(event) => setLocalPath(event.target.value)}
+                  placeholder={t('welcome.addLocalPlaceholder')}
+                  className="flex-1 rounded-md border border-border bg-elevated px-3 py-1.5 text-sm text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={registerRepository.isPending}
+                >
+                  {registerRepository.isPending
+                    ? t('welcome.registering')
+                    : t('welcome.addLocalSubmit')}
+                </Button>
+              </div>
+              {registerRepository.isError ? (
+                <p className="text-xs text-vcs-deleted">
+                  {t('welcome.registerFailed')}:{' '}
+                  {registerRepository.error.message}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
         </div>
 
-        <section className="flex flex-col gap-2">
-          <h2 className="select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
-            {t('welcome.favorites')}
-          </h2>
-          <RepositoryGrid
-            repositories={favoriteRepositories}
-            emptyTitle={t('welcome.favoritesEmptyTitle')}
-            emptyDescription={t('welcome.favoritesEmptyDescription')}
-          />
-        </section>
+        {repositories.isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted">
+            <Spinner />
+            {t('welcome.loading')}
+          </div>
+        ) : repositories.isError ? (
+          <p className="text-sm text-vcs-deleted">{t('welcome.loadFailed')}</p>
+        ) : (
+          <>
+            <section className="flex flex-col gap-2">
+              <h2 className="select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
+                {t('welcome.favorites')}
+              </h2>
+              <RepositoryGrid
+                repositories={favorites}
+                emptyTitle={t('welcome.favoritesEmptyTitle')}
+                emptyDescription={t('welcome.favoritesEmptyDescription')}
+                onOpen={open}
+              />
+            </section>
 
-        <section className="flex flex-col gap-2">
-          <h2 className="select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
-            {t('welcome.recent')}
-          </h2>
-          <RepositoryGrid
-            repositories={recentRepositories}
-            emptyTitle={t('welcome.recentEmptyTitle')}
-            emptyDescription={t('welcome.recentEmptyDescription')}
-          />
-        </section>
+            <section className="flex flex-col gap-2">
+              <h2 className="select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
+                {t('welcome.recent')}
+              </h2>
+              <RepositoryGrid
+                repositories={all}
+                emptyTitle={t('welcome.recentEmptyTitle')}
+                emptyDescription={t('welcome.recentEmptyDescription')}
+                onOpen={open}
+              />
+            </section>
+          </>
+        )}
       </div>
     </div>
   )

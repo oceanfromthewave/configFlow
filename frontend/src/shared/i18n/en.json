@@ -45,5 +45,11 @@
   "welcome.favoritesEmptyDescription": "Repositories you mark as favorite will show up here.",
   "welcome.recentEmptyTitle": "No recent repositories",
   "welcome.recentEmptyDescription": "Repositories you open will show up in this list.",
-  "welcome.comingSoon": "Coming soon"
+  "welcome.comingSoon": "Coming soon",
+  "welcome.addLocalPlaceholder": "Repository folder path (e.g. C:\\dev\\myrepo)",
+  "welcome.addLocalSubmit": "Register",
+  "welcome.registering": "Registering…",
+  "welcome.registerFailed": "Registration failed",
+  "welcome.loading": "Loading repositories…",
+  "welcome.loadFailed": "Could not load repositories"
 }
