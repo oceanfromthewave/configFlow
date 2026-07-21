@@ -51,5 +51,12 @@
   "welcome.registering": "Registering…",
   "welcome.registerFailed": "Registration failed",
   "welcome.loading": "Loading repositories…",
-  "welcome.loadFailed": "Could not load repositories"
+  "welcome.loadFailed": "Could not load repositories",
+  "workingTree.staged": "Staged",
+  "workingTree.unstaged": "Changes",
+  "workingTree.conflicted": "Conflicts",
+  "workingTree.cleanTitle": "No changes",
+  "workingTree.cleanDescription": "The working tree is clean.",
+  "workingTree.loading": "Loading status…",
+  "workingTree.loadFailed": "Could not load the working-tree status"
 }
