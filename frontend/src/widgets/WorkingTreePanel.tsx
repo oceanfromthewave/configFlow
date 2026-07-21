@@ -1,10 +1,14 @@
+import type {ReactNode} from 'react'
+
+import {useWorkingTreeStatus} from '@/entities/repository/api/repositories'
 import type {
     ChangeType,
     ConflictedFile,
     FileChange,
-} from '@/shared/api/repositories'
-import {useWorkingTreeStatus} from '@/shared/api/repositories'
+    Resolution,
+} from '@/entities/repository/model/types'
 import {useT} from '@/shared/i18n'
+import type {MessageKey} from '@/shared/i18n'
 import {useUiStore} from '@/shared/lib/uiStore'
 import {Badge, EmptyState, Spinner} from '@/shared/ui'
 import type {BadgeVariant} from '@/shared/ui'
@@ -20,6 +24,14 @@ const CHANGE_STYLE: Record<ChangeType, { letter: string; variant: BadgeVariant }
     UNTRACKED: {letter: '?', variant: 'default'},
     IGNORED: {letter: 'I', variant: 'default'},
     LOCKED_BY_OTHER: {letter: 'L', variant: 'default'},
+}
+
+/** Conflict resolution state, translated instead of shown as a raw enum. */
+const RESOLUTION_KEY: Record<Resolution, MessageKey> = {
+    UNRESOLVED: 'workingTree.resolutionUnresolved',
+    MINE: 'workingTree.resolutionMine',
+    THEIRS: 'workingTree.resolutionTheirs',
+    MANUAL: 'workingTree.resolutionManual',
 }
 
 function FileRow({
@@ -53,7 +65,7 @@ function Section({
                  }: {
     title: string
     count: number
-    children: React.ReactNode
+    children: ReactNode
 }) {
     if (count === 0) return null
     return (
@@ -71,6 +83,17 @@ export function WorkingTreePanel() {
     const t = useT()
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
     const status = useWorkingTreeStatus(repositoryId)
+
+    // The query is disabled without a repository, so it would stay `isPending`
+    // forever and render a spinner that never resolves.
+    if (repositoryId == null) {
+        return (
+            <EmptyState
+                title={t('center.emptyTitle')}
+                description={t('center.emptyDescription')}
+            />
+        )
+    }
 
     if (status.isPending) {
         return (
@@ -118,7 +141,7 @@ export function WorkingTreePanel() {
             path={file.path}
             letter="!"
             variant="conflicted"
-            hint={file.resolution}
+            hint={t(RESOLUTION_KEY[file.resolution])}
         />
     )
 
