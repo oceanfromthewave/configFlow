@@ -23,14 +23,20 @@ const initialUiState = useUiStore.getState()
 
 beforeEach(() => {
   useUiStore.setState(initialUiState, true)
+  // URL-aware stub: the shell now queries both /health and /repositories,
+  // which return different shapes.
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ status: 'UP' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    ),
+    vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : String(input)
+      const body = url.includes('/repositories') ? [] : { status: 'UP' }
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+    }),
   )
 })
 
@@ -90,11 +96,16 @@ describe('layout shell', () => {
     ).toBeInTheDocument()
   })
 
-  it('starts on the welcome page with the empty favorites grid', () => {
+  it('starts on the welcome page and shows the empty grids once the list loads', async () => {
     renderApp()
 
+    // Header renders immediately; the grids appear after the query resolves.
     expect(screen.getByText('시작하기')).toBeInTheDocument()
-    expect(screen.getByText('즐겨찾기가 없습니다')).toBeInTheDocument()
+    expect(
+      await screen.findByText('즐겨찾기가 없습니다', undefined, {
+        timeout: 3000,
+      }),
+    ).toBeInTheDocument()
     expect(screen.getByText('최근 연 저장소가 없습니다')).toBeInTheDocument()
   })
 })

@@ -15,6 +15,11 @@ interface UiState {
   route: AppRoute
   setRoute: (route: AppRoute) => void
 
+  /** Repository currently open in the workspace; null on the Welcome screen. */
+  currentRepositoryId: string | null
+  openRepository: (repositoryId: string) => void
+  closeRepository: () => void
+
   centerTab: CenterTab
   setCenterTab: (tab: CenterTab) => void
 
@@ -28,6 +33,11 @@ interface UiState {
 export const useUiStore = create<UiState>()((set) => ({
   route: 'welcome',
   setRoute: (route) => set({ route }),
+
+  currentRepositoryId: null,
+  openRepository: (repositoryId) =>
+      set({currentRepositoryId: repositoryId, route: 'repository'}),
+  closeRepository: () => set({currentRepositoryId: null, route: 'welcome'}),
 
   centerTab: 'history',
   setCenterTab: (centerTab) => set({ centerTab }),
