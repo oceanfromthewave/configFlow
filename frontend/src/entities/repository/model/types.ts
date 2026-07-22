@@ -85,3 +85,26 @@ export interface HistoryFilters {
   from?: string
   to?: string
 }
+
+/**
+ * One hunk of a unified diff.
+ *
+ * Each entry of `lines` keeps its leading `' '`, `'+'` or `'-'`, which is what
+ * decides how the renderer colours the row.
+ */
+export interface DiffHunk {
+  oldStart: number
+  oldCount: number
+  newStart: number
+  newCount: number
+  lines: string[]
+}
+
+/** Structured diff of one file; `hunks` is empty for binary and unchanged files. */
+export interface FileDiff {
+  path: string
+  oldPath?: string | null
+  type: ChangeType
+  binary: boolean
+  hunks: DiffHunk[]
+}

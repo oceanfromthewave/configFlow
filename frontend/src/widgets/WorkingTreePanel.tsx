@@ -14,6 +14,7 @@ import type {
 import {useT} from '@/shared/i18n'
 import type {MessageKey} from '@/shared/i18n'
 import {apiErrorKey} from '@/shared/lib/apiErrorMessage'
+import {cn} from '@/shared/lib/cn'
 import {useUiStore} from '@/shared/lib/uiStore'
 import {Badge, Button, EmptyState, IconButton, Spinner} from '@/shared/ui'
 import type {BadgeVariant} from '@/shared/ui'
@@ -52,22 +53,40 @@ function FileRow({
                      variant,
                      hint,
                      action,
+                     selected,
+                     onSelect,
                  }: {
     path: string
     letter: string
     variant: BadgeVariant
     hint?: string
     action: RowAction
+    selected: boolean
+    onSelect: () => void
 }) {
     return (
-        <li className="group flex items-center gap-2 rounded px-2 py-1 hover:bg-elevated">
-            <Badge variant={variant} className="w-5 justify-center">
-                {letter}
-            </Badge>
-            <span className="flex-1 truncate font-mono text-xs text-primary" title={path}>
-                  {path}
-              </span>
-            {hint ? <span className="text-[11px] text-muted">{hint}</span> : null}
+        <li
+            className={cn(
+                'group flex items-center gap-2 rounded pr-2 hover:bg-elevated',
+                selected && 'bg-elevated',
+            )}
+        >
+            {/* The row itself selects; the action button sits outside it so a click
+                on '+' does not also change what the diff panel shows. */}
+            <button
+                type="button"
+                onClick={onSelect}
+                aria-current={selected}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+                <Badge variant={variant} className="w-5 shrink-0 justify-center">
+                    {letter}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-primary" title={path}>
+                    {path}
+                </span>
+                {hint ? <span className="shrink-0 text-[11px] text-muted">{hint}</span> : null}
+            </button>
             <IconButton
                 size="sm"
                 aria-label={`${action.label}: ${path}`}
@@ -118,6 +137,8 @@ function Section({
 export function WorkingTreePanel() {
     const t = useT()
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
+    const selectedFile = useUiStore((s) => s.selectedFile)
+    const selectFile = useUiStore((s) => s.selectFile)
     const status = useWorkingTreeStatus(repositoryId)
     const stageFiles = useStageFiles()
     const unstageFiles = useUnstageFiles()
@@ -182,6 +203,9 @@ export function WorkingTreePanel() {
         onClick: () => stage([path]),
     })
 
+    const isSelected = (path: string, staged: boolean) =>
+        selectedFile?.path === path && selectedFile.staged === staged
+
     const renderStaged = (change: FileChange) => {
         const style = CHANGE_STYLE[change.type]
         return (
@@ -191,6 +215,8 @@ export function WorkingTreePanel() {
                 letter={style.letter}
                 variant={style.variant}
                 hint={change.oldPath ? `← ${change.oldPath}` : undefined}
+                selected={isSelected(change.path, true)}
+                onSelect={() => selectFile({path: change.path, staged: true})}
                 action={{
                     label: t('workingTree.unstageFile'),
                     symbol: '−',
@@ -210,6 +236,8 @@ export function WorkingTreePanel() {
                 letter={style.letter}
                 variant={style.variant}
                 hint={change.oldPath ? `← ${change.oldPath}` : undefined}
+                selected={isSelected(change.path, false)}
+                onSelect={() => selectFile({path: change.path, staged: false})}
                 action={stageAction(change.path)}
             />
         )
@@ -222,6 +250,8 @@ export function WorkingTreePanel() {
             letter="!"
             variant="conflicted"
             hint={t(RESOLUTION_KEY[file.resolution])}
+            selected={isSelected(file.path, false)}
+            onSelect={() => selectFile({path: file.path, staged: false})}
             action={stageAction(file.path)}
         />
     )

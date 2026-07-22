@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-query'
 
 import type {
+    FileDiff,
     HistoryFilters,
     HistoryPage,
     RepositorySummary,
@@ -97,9 +98,48 @@ export function useHistory(
     })
 }
 
+/**
+ * Diff of one working-copy file.
+ *
+ * `staged` is part of the key, not just the request: the same path has two
+ * different diffs at once (HEAD vs index, index vs working tree).
+ */
+export function useFileDiff(
+    repositoryId: string | null,
+    path: string | null,
+    staged: boolean,
+) {
+    return useQuery({
+        queryKey: [...queryKeys.repository(repositoryId ?? 'none'), 'diff', path, staged],
+        queryFn: () =>
+            apiFetch<FileDiff>(
+                `/repositories/${repositoryId}/diff?${new URLSearchParams({
+                    path: path ?? '',
+                    staged: String(staged),
+                })}`,
+            ),
+        enabled: repositoryId != null && path != null,
+    })
+}
+
 interface PathsPayload {
     repositoryId: string
     paths: string[]
+}
+
+/**
+ * Everything read from one repository is keyed under its id, so dropping that
+ * prefix refreshes the status, the open diff and the history in one go. Staging
+ * moves a change between the two diff sides, so invalidating only the status
+ * would leave the visible diff describing the previous side.
+ */
+function invalidateRepository(
+    queryClient: ReturnType<typeof useQueryClient>,
+    repositoryId: string,
+) {
+    return queryClient.invalidateQueries({
+        queryKey: queryKeys.repository(repositoryId),
+    })
 }
 
 /** Adds the given paths to the staging area. */
@@ -112,7 +152,7 @@ export function useStageFiles() {
                 body: {paths},
             }),
         onSuccess: (_result, {repositoryId}) =>
-            queryClient.invalidateQueries({queryKey: queryKeys.status(repositoryId)}),
+            invalidateRepository(queryClient, repositoryId),
     })
 }
 
@@ -126,7 +166,7 @@ export function useUnstageFiles() {
                 body: {paths},
             }),
         onSuccess: (_result, {repositoryId}) =>
-            queryClient.invalidateQueries({queryKey: queryKeys.status(repositoryId)}),
+            invalidateRepository(queryClient, repositoryId),
     })
 }
 
@@ -140,7 +180,7 @@ export interface CommitResult {
     revisionId: string
 }
 
-/** Commits what is currently staged; history changes too, so both caches drop. */
+/** Commits what is currently staged; the index, the diffs and the history all move. */
 export function useCommit() {
     const queryClient = useQueryClient()
     return useMutation({
@@ -149,10 +189,8 @@ export function useCommit() {
                 method: 'POST',
                 body: {message, amend},
             }),
-        onSuccess: (_result, {repositoryId}) => {
-            queryClient.invalidateQueries({queryKey: queryKeys.status(repositoryId)})
-            queryClient.invalidateQueries({queryKey: queryKeys.history(repositoryId)})
-        },
+        onSuccess: (_result, {repositoryId}) =>
+            invalidateRepository(queryClient, repositoryId),
     })
 }
 
