@@ -143,6 +143,24 @@ public class RepositoryController
 		}
 	}
 
+	/** Branches, tags and the HEAD pointer of one repository. */
+	public record RefListResponse(List<RefLabelResponse> refs)
+	{
+		static RefListResponse from(List<RefLabel> refs)
+		{
+			return new RefListResponse(refs.stream().map(RefLabelResponse::from).toList());
+		}
+	}
+
+	/** Revisions present in one ref but not the other. */
+	public record CompareResponse(List<RevisionResponse> revisions)
+	{
+		static CompareResponse from(List<Revision> revisions)
+		{
+			return new CompareResponse(revisions.stream().map(RevisionResponse::from).toList());
+		}
+	}
+
 	private final RepositoryService repositoryService;
 
 	public RepositoryController(RepositoryService repositoryService)
@@ -207,9 +225,8 @@ public class RepositoryController
 
 	@GetMapping("/{id}/history")
 	public HistoryPageResponse history(@PathVariable String id, @RequestParam(required = false) String cursor, @RequestParam(defaultValue = "50") int limit,
-									   @RequestParam(required = false) String branch, @RequestParam(required = false) String author,
-									   @RequestParam(required = false) String message, @RequestParam(required = false) String path,
-									   @RequestParam(required = false) String from, @RequestParam(required = false) String to)
+			@RequestParam(required = false) String branch, @RequestParam(required = false) String author, @RequestParam(required = false) String message,
+			@RequestParam(required = false) String path, @RequestParam(required = false) String from, @RequestParam(required = false) String to)
 	{
 		String trimmedPath = trimmed(path);
 		HistoryQuery query = new HistoryQuery(trimmed(cursor), limit, trimmed(branch), trimmed(author), trimmed(message),
@@ -255,14 +272,26 @@ public class RepositoryController
 	/**
 	 * Diff of one working-copy file.
 	 *
-	 * @param staged {@code true} shows what a commit would record (HEAD against the index),
-	 *               {@code false} what is still unstaged (index against the working tree)
+	 * @param staged
+	 *        {@code true} shows what a commit would record (HEAD against the index), {@code false} what is still unstaged (index against the working tree)
 	 */
 	@GetMapping("/{id}/diff")
 	public FileDiffResponse diffWorking(@PathVariable String id, @RequestParam(required = false) String path,
-										@RequestParam(defaultValue = "false") boolean staged)
+			@RequestParam(defaultValue = "false") boolean staged)
 	{
 		return FileDiffResponse.from(repositoryService.diffWorking(RepositoryId.of(id), toPath(path), staged));
+	}
+
+	@GetMapping("/{id}/refs")
+	public RefListResponse listRefs(@PathVariable String id)
+	{
+		return RefListResponse.from(repositoryService.listRefs(RepositoryId.of(id)));
+	}
+
+	@GetMapping("/{id}/compare")
+	public CompareResponse compare(@PathVariable String id, @RequestParam(required = false) String base, @RequestParam(required = false) String target)
+	{
+		return CompareResponse.from(repositoryService.compare(RepositoryId.of(id), base, target));
 	}
 
 	/**
@@ -282,8 +311,7 @@ public class RepositoryController
 	}
 
 	/**
-	 * Renders a path the way the API talks about paths: relative to the repository root
-	 * and always with {@code /}, so a client never sees Windows separators.
+	 * Renders a path the way the API talks about paths: relative to the repository root and always with {@code /}, so a client never sees Windows separators.
 	 */
 	private static String apiPath(Path path)
 	{

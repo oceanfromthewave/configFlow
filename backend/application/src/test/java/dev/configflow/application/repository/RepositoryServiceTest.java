@@ -19,6 +19,7 @@ import dev.configflow.domain.vcs.model.FileDiff;
 import dev.configflow.domain.vcs.model.HistoryQuery;
 import dev.configflow.domain.vcs.model.IgnorePattern;
 import dev.configflow.domain.vcs.model.Page;
+import dev.configflow.domain.vcs.model.RefLabel;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.Revision;
 import dev.configflow.domain.vcs.model.RevisionId;
@@ -26,6 +27,7 @@ import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
 import dev.configflow.domain.vcs.port.CommitOperations;
 import dev.configflow.domain.vcs.port.DiffOperations;
+import dev.configflow.domain.vcs.port.RefBrowseOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
 import java.nio.file.Path;
@@ -242,6 +244,36 @@ class RepositoryServiceTest {
     }
 
     @Test
+    void listRefs_returnsWhatTheProviderReports() {
+        RepositoryId id = service.register(repoDir).id();
+
+        List<RefLabel> refs = service.listRefs(id);
+
+        assertEquals(2, refs.size());
+        assertEquals(RefLabel.Kind.HEAD, refs.get(0).kind());
+    }
+
+    @Test
+    void compare_trimsBothRefsBeforeReachingTheProvider() {
+        RepositoryId id = service.register(repoDir).id();
+
+        List<Revision> ahead = service.compare(id, "  main  ", "feature/x");
+
+        assertEquals("main", provider.lastCompareBase);
+        assertEquals("feature/x", provider.lastCompareTarget);
+        assertEquals(1, ahead.size());
+    }
+
+    @Test
+    void compare_rejectsBlankRefs() {
+        RepositoryId id = service.register(repoDir).id();
+
+        assertThrows(IllegalArgumentException.class, () -> service.compare(id, "  ", "main"));
+        assertThrows(IllegalArgumentException.class, () -> service.compare(id, "main", null));
+        assertNull(provider.lastCompareBase, "nothing may reach the provider");
+    }
+
+    @Test
     void commit_rejectsProvidersWithoutCommitOperations() {
         BareProvider bare = new BareProvider();
         provider.detects = false;
@@ -288,8 +320,8 @@ class RepositoryServiceTest {
         }
     }
 
-    private static final class FakeGitProvider
-            implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations {
+    private static final class FakeGitProvider implements VcsProvider, WorkingTreeOperations,
+            CommitOperations, DiffOperations, RefBrowseOperations {
 
         static final RevisionId CREATED = new RevisionId("0123456789abcdef");
         static final Revision REVISION = new Revision(
@@ -310,6 +342,8 @@ class RepositoryServiceTest {
         RevisionId lastShown;
         Path lastDiffPath;
         boolean lastDiffStaged;
+        String lastCompareBase;
+        String lastCompareTarget;
 
         @Override
         public VcsType type() {
@@ -388,6 +422,20 @@ class RepositoryServiceTest {
         @Override
         public String contentAt(RepositoryHandle repo, RevisionId revision, Path path) {
             throw new UnsupportedOperationException("not needed by these tests");
+        }
+
+        @Override
+        public List<RefLabel> listRefs(RepositoryHandle repo) {
+            return List.of(
+                    new RefLabel(RefLabel.Kind.HEAD, "main"),
+                    new RefLabel(RefLabel.Kind.BRANCH, "main"));
+        }
+
+        @Override
+        public List<Revision> compare(RepositoryHandle repo, String base, String target) {
+            lastCompareBase = base;
+            lastCompareTarget = target;
+            return List.of(REVISION);
         }
     }
 

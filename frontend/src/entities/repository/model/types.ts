@@ -60,6 +60,17 @@ export interface RefLabel {
   name: string
 }
 
+/**
+ * Every ref of a repository, as returned by `GET /repositories/{id}/refs`.
+ *
+ * Exactly one `HEAD` entry names what HEAD points at — a branch name, or a
+ * revision id when the head is detached. The list is empty before the first
+ * commit.
+ */
+export interface RefList {
+  refs: RefLabel[]
+}
+
 /** One commit (Git) or revision (SVN) as returned by the history endpoint. */
 export interface Revision {
   id: string
