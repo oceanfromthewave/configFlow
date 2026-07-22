@@ -3,8 +3,12 @@ package dev.configflow.application.repository;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
+import dev.configflow.domain.vcs.capability.VcsCapability;
+import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
+import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
+import dev.configflow.domain.vcs.port.CommitOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.VcsProviderRegistry;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
@@ -15,7 +19,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
- * Use case: register, list and inspect repositories.
+ * Use case: register, list and inspect repositories, and drive the staging/commit flow.
  *
  * <p>Pure Java (no framework types). It orchestrates two domain ports — the
  * {@link RepositoryStore} for app metadata and the {@link VcsProviderRegistry} for the
@@ -75,15 +79,80 @@ public final class RepositoryService {
 	 * @throws UnsupportedOperationException if the provider exposes no working tree
 	 */
 	public WorkingTreeStatus status(RepositoryId id) {
+		Opened<WorkingTreeOperations> opened = openWith(id, WorkingTreeOperations.class);
+		return opened.operations().status(opened.handle());
+	}
+
+	/** Stages the given working-copy-relative paths. */
+	public void stage(RepositoryId id, List<Path> paths) {
+		List<Path> safePaths = requirePaths(paths);
+		Opened<WorkingTreeOperations> opened = openWith(id, WorkingTreeOperations.class);
+		opened.operations().stage(opened.handle(), safePaths);
+	}
+
+	/** Removes the given working-copy-relative paths from the staging area. */
+	public void unstage(RepositoryId id, List<Path> paths) {
+		List<Path> safePaths = requirePaths(paths);
+		Opened<WorkingTreeOperations> opened = openWith(id, WorkingTreeOperations.class);
+		opened.operations().unstage(opened.handle(), safePaths);
+	}
+
+	/**
+	 * Creates a commit from whatever the provider considers selected content.
+	 *
+	 * @throws IllegalArgumentException      if the message is blank
+	 * @throws UnsupportedOperationException if amending is requested but unsupported
+	 */
+	public RevisionId commit(RepositoryId id, CommitRequest request) {
+		Objects.requireNonNull(request, "request");
+		if (request.message().isBlank()) {
+			throw new IllegalArgumentException("Commit message must not be blank");
+		}
+		Opened<CommitOperations> opened = openWith(id, CommitOperations.class);
+		if (request.amend()
+				&& !opened.provider().capabilities().contains(VcsCapability.AMEND)) {
+			throw new UnsupportedOperationException(
+					opened.provider().type() + " does not support amending");
+		}
+		return opened.operations().commit(opened.handle(), request);
+	}
+
+	/**
+	 * Resolves a registered repository into a live handle plus the requested operation port.
+	 *
+	 * @throws NoSuchElementException        if no repository has the given id
+	 * @throws UnsupportedOperationException if its provider does not implement {@code port}
+	 */
+	private <T> Opened<T> openWith(RepositoryId id, Class<T> port) {
 		Repository repository = require(id);
 		VcsProvider provider = providers.byType(repository.vcsType()).orElseThrow(() ->
 				new IllegalStateException("No provider registered for " + repository.vcsType()));
-		if (!(provider instanceof WorkingTreeOperations workingTree)) {
+		if (!port.isInstance(provider)) {
 			throw new UnsupportedOperationException(
-					repository.vcsType() + " has no working-tree operations");
+					repository.vcsType() + " has no " + port.getSimpleName());
 		}
-		RepositoryHandle handle = provider.open(repository.localPath());
-		return workingTree.status(handle);
+		return new Opened<>(provider, provider.open(repository.localPath()), port.cast(provider));
+	}
+
+	/** A repository resolved down to one live operation port. */
+	private record Opened<T>(VcsProvider provider, RepositoryHandle handle, T operations) {
+	}
+
+	/**
+	 * Rejects anything that could point outside the working copy: the paths come from a
+	 * client, and both absolute paths and {@code ..} segments would escape it.
+	 */
+	private static List<Path> requirePaths(List<Path> paths) {
+		if (paths == null || paths.isEmpty()) {
+			throw new IllegalArgumentException("At least one path is required");
+		}
+		for (Path path : paths) {
+			if (path.isAbsolute() || path.normalize().startsWith("..")) {
+				throw new IllegalArgumentException(
+						"Path must be inside the working copy: " + path);
+			}
+		}
+		return List.copyOf(paths);
 	}
 
 	private Repository require(RepositoryId id) {
