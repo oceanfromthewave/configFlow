@@ -192,8 +192,13 @@ public final class RepositoryService
 	 */
 	public List<Revision> compare(RepositoryId id, String base, String target)
 	{
+		// Validate before resolving the port: as arguments to the call below these ran
+		// after openWith, so a blank ref on a provider without the port was reported as an
+		// unsupported capability, and every rejected request still opened the repository.
+		String safeBase = requireRef(base, "base");
+		String safeTarget = requireRef(target, "target");
 		Opened<RefBrowseOperations> opened = openWith(id, RefBrowseOperations.class);
-		return opened.operations().compare(opened.handle(), requireRef(base, "base"), requireRef(target, "target"));
+		return opened.operations().compare(opened.handle(), safeBase, safeTarget);
 	}
 
 	/**
