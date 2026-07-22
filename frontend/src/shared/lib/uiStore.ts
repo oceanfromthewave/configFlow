@@ -11,6 +11,17 @@ export type AppRoute = 'welcome' | 'repository'
 export type CenterTab = 'history' | 'workingTree'
 export type BottomPanelTab = 'console' | 'operations' | 'log'
 
+/**
+ * File whose diff the right-hand panel shows.
+ *
+ * `staged` picks the side being compared, not merely which list it came from:
+ * the same path can differ from HEAD and from the index at the same time.
+ */
+export interface SelectedFile {
+  path: string
+  staged: boolean
+}
+
 interface UiState {
   route: AppRoute
   setRoute: (route: AppRoute) => void
@@ -19,6 +30,9 @@ interface UiState {
   currentRepositoryId: string | null
   openRepository: (repositoryId: string) => void
   closeRepository: () => void
+
+  selectedFile: SelectedFile | null
+  selectFile: (file: SelectedFile | null) => void
 
   centerTab: CenterTab
   setCenterTab: (tab: CenterTab) => void
@@ -35,9 +49,15 @@ export const useUiStore = create<UiState>()((set) => ({
   setRoute: (route) => set({ route }),
 
   currentRepositoryId: null,
+  // Clear the selection alongside the repository: a path from the previous one
+  // would otherwise be requested against the new repository.
   openRepository: (repositoryId) =>
-      set({currentRepositoryId: repositoryId, route: 'repository'}),
-  closeRepository: () => set({currentRepositoryId: null, route: 'welcome'}),
+      set({currentRepositoryId: repositoryId, route: 'repository', selectedFile: null}),
+  closeRepository: () =>
+      set({currentRepositoryId: null, route: 'welcome', selectedFile: null}),
+
+  selectedFile: null,
+  selectFile: (selectedFile) => set({ selectedFile }),
 
   centerTab: 'history',
   setCenterTab: (centerTab) => set({ centerTab }),

@@ -139,6 +139,46 @@ describe('WorkingTreePanel', () => {
     )
   })
 
+  it('selects a file for the diff panel, remembering which side it came from', async () => {
+    stubApi({
+      staged: [{ path: 'both.txt', type: 'MODIFIED', oldPath: null }],
+      unstaged: [{ path: 'both.txt', type: 'MODIFIED', oldPath: null }],
+      conflicted: [],
+    })
+
+    renderPanel()
+    const [stagedRow, unstagedRow] = await screen.findAllByText('both.txt')
+
+    await userEvent.click(stagedRow)
+    expect(useUiStore.getState().selectedFile).toEqual({
+      path: 'both.txt',
+      staged: true,
+    })
+
+    // The same path appears on both sides and has a different diff on each.
+    await userEvent.click(unstagedRow)
+    expect(useUiStore.getState().selectedFile).toEqual({
+      path: 'both.txt',
+      staged: false,
+    })
+  })
+
+  it('does not change the selection when the row action is used', async () => {
+    const calls = stubApi({
+      staged: [],
+      unstaged: [{ path: 'new.txt', type: 'UNTRACKED', oldPath: null }],
+      conflicted: [],
+    })
+
+    renderPanel()
+    await userEvent.click(
+      await screen.findByRole('button', { name: '스테이지: new.txt' }),
+    )
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(useUiStore.getState().selectedFile).toBeNull()
+  })
+
   it('unstages the whole section in one request', async () => {
     const calls = stubApi({
       staged: [
