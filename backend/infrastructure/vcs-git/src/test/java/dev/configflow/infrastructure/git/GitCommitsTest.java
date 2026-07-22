@@ -15,14 +15,20 @@ import dev.configflow.domain.vcs.model.Revision;
 import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.VcsType;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -270,6 +276,26 @@ class GitCommitsTest {
     }
 
     @Test
+    void show_ambiguousAbbreviationIsRejectedAsBadInput() throws Exception {
+        commitFile("a.txt", "1", "only commit");
+        String prefix = insertBlobsUntilPrefixCollision();
+
+        // AmbiguousObjectException is an IOException, so without its own catch this would
+        // be reported as a server fault instead of "type more characters".
+        assertThrows(IllegalArgumentException.class,
+                () -> commits.show(handle, new RevisionId(prefix)));
+    }
+
+    @Test
+    void history_ambiguousCursorIsRejectedAsBadInput() throws Exception {
+        commitFile("a.txt", "1", "only commit");
+        String prefix = insertBlobsUntilPrefixCollision();
+
+        assertThrows(IllegalArgumentException.class, () -> commits.history(handle,
+                new HistoryQuery(prefix, 10, null, null, null, null, null, null)));
+    }
+
+    @Test
     void history_malformedCursorOrBranchIsRejectedAsBadInput() throws Exception {
         commitFile("a.txt", "1", "only commit");
 
@@ -290,6 +316,32 @@ class GitCommitsTest {
 
     private static List<String> messagesOf(Page<Revision> page) {
         return page.items().stream().map(r -> r.message().trim()).toList();
+    }
+
+    /**
+     * Writes loose blobs until two object ids share a 4-character prefix, and returns
+     * that prefix.
+     *
+     * <p>Four hex characters is Git's shortest accepted abbreviation, so a collision is
+     * a birthday problem over 65536 buckets: a few hundred objects make it near certain,
+     * while hand-picking a colliding pair up front is not possible.</p>
+     */
+    private String insertBlobsUntilPrefixCollision() throws Exception {
+        try (Git git = Git.open(repoDir.toFile());
+             ObjectInserter inserter = git.getRepository().newObjectInserter()) {
+            Map<String, ObjectId> byPrefix = new HashMap<>();
+            for (int i = 0; i < 5000; i++) {
+                ObjectId id = inserter.insert(
+                        Constants.OBJ_BLOB, ("blob " + i).getBytes(StandardCharsets.UTF_8));
+                String prefix = id.name().substring(0, 4);
+                ObjectId previous = byPrefix.put(prefix, id);
+                if (previous != null && !previous.equals(id)) {
+                    inserter.flush();
+                    return prefix;
+                }
+            }
+            throw new IllegalStateException("no 4-character prefix collision in 5000 blobs");
+        }
     }
 
     private void writeFile(String name, String content) throws IOException {
