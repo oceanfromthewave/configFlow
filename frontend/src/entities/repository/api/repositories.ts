@@ -9,6 +9,7 @@ import type {
     FileDiff,
     HistoryFilters,
     HistoryPage,
+    RefList,
     RepositorySummary,
     WorkingTreeStatus,
 } from '@/entities/repository/model/types'
@@ -119,6 +120,15 @@ export function useFileDiff(
                 })}`,
             ),
         enabled: repositoryId != null && path != null,
+    })
+}
+
+/** Branches, tags and the HEAD pointer of one repository. */
+export function useRefs(repositoryId: string | null) {
+    return useQuery({
+        queryKey: queryKeys.refs(repositoryId ?? 'none'),
+        queryFn: () => apiFetch<RefList>(`/repositories/${repositoryId}/refs`),
+        enabled: repositoryId != null,
     })
 }
 

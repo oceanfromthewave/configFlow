@@ -452,6 +452,77 @@ class RepositoryControllerTest {
     }
 
     @Test
+    void listRefs_returnsBranchesTagsAndTheHeadPointer() throws Exception {
+        when(repositoryService.listRefs(any())).thenReturn(List.of(
+                new RefLabel(RefLabel.Kind.HEAD, "main"),
+                new RefLabel(RefLabel.Kind.BRANCH, "main"),
+                new RefLabel(RefLabel.Kind.REMOTE_BRANCH, "origin/main"),
+                new RefLabel(RefLabel.Kind.TAG, "v1.0")));
+        String id = UUID.randomUUID().toString();
+
+        mvc.perform(get("/api/v1/repositories/" + id + "/refs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refs[0].kind").value("HEAD"))
+                .andExpect(jsonPath("$.refs[0].name").value("main"))
+                .andExpect(jsonPath("$.refs[2].kind").value("REMOTE_BRANCH"))
+                .andExpect(jsonPath("$.refs[3].name").value("v1.0"));
+
+        verify(repositoryService).listRefs(RepositoryId.of(id));
+    }
+
+    @Test
+    void listRefs_onARepositoryWithoutCommitsIsAnEmptyList() throws Exception {
+        when(repositoryService.listRefs(any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/refs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refs").isEmpty());
+    }
+
+    @Test
+    void compare_forwardsBothRefsAndFlattensTheRevisions() throws Exception {
+        when(repositoryService.compare(any(), any(), any())).thenReturn(List.of(new Revision(
+                new RevisionId("0123456789abcdef"),
+                List.of(),
+                new Author("Alice", "alice@configflow.dev"),
+                NOW,
+                "feat: ahead of main",
+                List.of())));
+        String id = UUID.randomUUID().toString();
+
+        mvc.perform(get("/api/v1/repositories/" + id + "/compare")
+                        .param("base", "main")
+                        .param("target", "feature/x"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revisions[0].id").value("0123456789abcdef"))
+                .andExpect(jsonPath("$.revisions[0].message").value("feat: ahead of main"));
+
+        verify(repositoryService).compare(
+                eq(RepositoryId.of(id)), eq("main"), eq("feature/x"));
+    }
+
+    @Test
+    void compare_missingRefIs400() throws Exception {
+        when(repositoryService.compare(any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("'target' must not be blank"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/compare")
+                        .param("base", "main"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void listRefs_unsupportedProviderIsCapabilityError() throws Exception {
+        when(repositoryService.listRefs(any()))
+                .thenThrow(new UnsupportedOperationException("SVN has no RefBrowseOperations"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/refs"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CAPABILITY_NOT_SUPPORTED"));
+    }
+
+    @Test
     void commit_unsupportedAmendIsCapabilityError() throws Exception {
         when(repositoryService.commit(any(), any()))
                 .thenThrow(new UnsupportedOperationException("SVN does not support amending"));

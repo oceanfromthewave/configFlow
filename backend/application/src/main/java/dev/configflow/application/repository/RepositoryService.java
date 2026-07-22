@@ -5,11 +5,7 @@ import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
-import dev.configflow.domain.vcs.port.CommitOperations;
-import dev.configflow.domain.vcs.port.DiffOperations;
-import dev.configflow.domain.vcs.port.VcsProvider;
-import dev.configflow.domain.vcs.port.VcsProviderRegistry;
-import dev.configflow.domain.vcs.port.WorkingTreeOperations;
+import dev.configflow.domain.vcs.port.*;
 
 import java.nio.file.Path;
 import java.time.Clock;
@@ -163,14 +159,41 @@ public final class RepositoryService
 	/**
 	 * Diffs a working-copy file.
 	 *
-	 * @param staged {@code true} compares HEAD against the index — what a commit would
-	 *               record — while {@code false} compares the index against the working
-	 *               tree, i.e. what is not staged yet
+	 * @param staged
+	 *        {@code true} compares HEAD against the index — what a commit would record — while {@code false} compares the index against the working tree, i.e. what
+	 * 		is not staged yet
 	 */
-	public FileDiff diffWorking(RepositoryId id, Path path, boolean staged) {
+	public FileDiff diffWorking(RepositoryId id, Path path, boolean staged)
+	{
 		Path safePath = requirePath(path);
 		Opened<DiffOperations> opened = openWith(id, DiffOperations.class);
 		return opened.operations().diffWorking(opened.handle(), safePath, staged);
+	}
+
+	/**
+	 * All branches and tags, plus one entry naming what HEAD points at.
+	 *
+	 * @throws UnsupportedOperationException
+	 * 		if the provider cannot read refs
+	 */
+	public List<RefLabel> listRefs(RepositoryId id)
+	{
+		Opened<RefBrowseOperations> opened = openWith(id, RefBrowseOperations.class);
+		return opened.operations().listRefs(opened.handle());
+	}
+
+	/**
+	 * Revisions reachable from {@code target} but not from {@code base}.
+	 *
+	 * @throws IllegalArgumentException
+	 * 		if either ref is blank
+	 * @throws NoSuchElementException
+	 * 		if either ref does not exist
+	 */
+	public List<Revision> compare(RepositoryId id, String base, String target)
+	{
+		Opened<RefBrowseOperations> opened = openWith(id, RefBrowseOperations.class);
+		return opened.operations().compare(opened.handle(), requireRef(base, "base"), requireRef(target, "target"));
 	}
 
 	/**
@@ -222,6 +245,16 @@ public final class RepositoryService
 			throw new IllegalArgumentException("Path must be inside the working copy: " + path);
 		}
 		return path;
+	}
+
+	/** A blank ref would reach JGit as a meaningless lookup rather than a clear error. */
+	private static String requireRef(String ref, String field)
+	{
+		if(ref == null || ref.isBlank())
+		{
+			throw new IllegalArgumentException("'" + field + "' must not be blank");
+		}
+		return ref.trim();
 	}
 
 	private Repository require(RepositoryId id)
