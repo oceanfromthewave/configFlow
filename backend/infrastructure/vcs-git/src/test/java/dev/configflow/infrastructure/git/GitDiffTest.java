@@ -232,6 +232,26 @@ class GitDiffTest {
                 handle, new RevisionId("no-such-ref"), first, Path.of("app.txt")));
     }
 
+    @Test
+    void diffRevisions_malformedRevisionIsRejectedAsBadInput() throws Exception {
+        RevisionId first = commitFile("app.txt", "one\n");
+
+        // RevisionSyntaxException is unchecked and not an IOException, so without its own
+        // catch it escapes untranslated. "a b" is a plausible typo for a branch name.
+        assertThrows(IllegalArgumentException.class, () -> diffs.diffRevisions(
+                handle, first, new RevisionId("a b"), Path.of("app.txt")));
+        assertThrows(IllegalArgumentException.class, () -> diffs.diffRevisions(
+                handle, new RevisionId("HEAD^{"), first, Path.of("app.txt")));
+    }
+
+    @Test
+    void contentAt_malformedRevisionIsRejectedAsBadInput() throws Exception {
+        commitFile("app.txt", "one\n");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> diffs.contentAt(handle, new RevisionId("a b"), Path.of("app.txt")));
+    }
+
     // --- content ---------------------------------------------------------
 
     @Test

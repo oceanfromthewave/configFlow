@@ -18,8 +18,10 @@ import java.util.NoSuchElementException;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
+import org.eclipse.jgit.errors.AmbiguousObjectException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.errors.RevisionSyntaxException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
@@ -92,6 +94,17 @@ final class GitDiff
 		{
 			throw new NoSuchElementException("Revision not found in " + repo.localPath());
 		}
+		catch(RevisionSyntaxException e)
+		{
+			// Unchecked and not an IOException; AmbiguousObjectException is an IOException
+			// and would land in the generic catch. Both are the caller mistyping a
+			// revision, so they belong in the 400 family rather than a 500.
+			throw new IllegalArgumentException("Not a valid revision: " + e.getMessage(), e);
+		}
+		catch(AmbiguousObjectException e)
+		{
+			throw new IllegalArgumentException("Ambiguous revision: " + e.getMessage(), e);
+		}
 		catch(IOException e)
 		{
 			throw new VcsException("Failed to diff " + path + " in " + repo.localPath(), e);
@@ -123,6 +136,14 @@ final class GitDiff
 		catch(MissingObjectException | IncorrectObjectTypeException e)
 		{
 			throw new NoSuchElementException("Revision not found in " + repo.localPath());
+		}
+		catch(RevisionSyntaxException e)
+		{
+			throw new IllegalArgumentException("Not a valid revision: " + e.getMessage(), e);
+		}
+		catch(AmbiguousObjectException e)
+		{
+			throw new IllegalArgumentException("Ambiguous revision: " + e.getMessage(), e);
 		}
 		catch(IOException e)
 		{
