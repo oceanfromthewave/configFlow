@@ -22,10 +22,16 @@ export function CommitBox() {
     if (repositoryId == null) return null
 
     const stagedCount = status.data?.staged.length ?? 0
+    // Git refuses to commit while any path is unmerged, so block it here rather
+    // than letting the request fail on the server.
+    const blockedByConflicts = (status.data?.conflicted.length ?? 0) > 0
     // Amending rewrites the previous commit, so it is meaningful with an empty index.
     const hasSomethingToCommit = stagedCount > 0 || amend
     const canSubmit =
-        message.trim().length > 0 && hasSomethingToCommit && !commit.isPending
+        message.trim().length > 0 &&
+        hasSomethingToCommit &&
+        !blockedByConflicts &&
+        !commit.isPending
 
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
@@ -53,16 +59,15 @@ export function CommitBox() {
             onSubmit={submit}
             className="flex shrink-0 flex-col gap-2 border-t border-border p-2"
         >
-              <textarea
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={3}
-                  placeholder={t('commit.messagePlaceholder')}
-                  aria-label={t('commit.messagePlaceholder')}
-                  className="resize-none rounded-md border border-border bg-elevated px-3 py-2 text-sm text-primary
-  outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
-              />
+            <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={3}
+                placeholder={t('commit.messagePlaceholder')}
+                aria-label={t('commit.messagePlaceholder')}
+                className="resize-none rounded-md border border-border bg-elevated px-3 py-2 text-sm text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+            />
 
             <div className="flex items-center justify-between gap-2">
                 <label className="flex select-none items-center gap-1.5 text-xs text-muted">
@@ -80,7 +85,11 @@ export function CommitBox() {
                 </Button>
             </div>
 
-            {!hasSomethingToCommit ? (
+            {blockedByConflicts ? (
+                <p className="text-xs text-vcs-conflicted">
+                    {t('commit.blockedByConflicts')}
+                </p>
+            ) : !hasSomethingToCommit ? (
                 <p className="text-xs text-muted">{t('commit.nothingStaged')}</p>
             ) : null}
 

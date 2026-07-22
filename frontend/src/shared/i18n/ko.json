@@ -74,6 +74,7 @@
   "commit.committing": "커밋 중…",
   "commit.amend": "이전 커밋 수정(amend)",
   "commit.nothingStaged": "스테이지된 변경사항이 없습니다",
+  "commit.blockedByConflicts": "충돌을 먼저 해결해야 커밋할 수 있습니다",
   "commit.failed": "커밋하지 못했습니다",
   "commit.created": "커밋 {revision} 생성됨",
   "error.validation": "요청이 거부되었습니다",
