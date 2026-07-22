@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/shared/i18n'
 import { useUiStore } from '@/shared/lib/uiStore'
+import { stubRepositoryApi } from '@/shared/test/apiStub'
 import { CommitBox } from '@/widgets/CommitBox'
 
 function renderBox() {
@@ -20,11 +21,6 @@ function renderBox() {
   )
 }
 
-interface RecordedCall {
-  url: string
-  body: unknown
-}
-
 /** Answers GET /status with `status` and POST /commit with `commitResponse`. */
 function stubApi(
   status: unknown,
@@ -32,32 +28,8 @@ function stubApi(
     status: 200,
     body: { revisionId: '0123456789abcdef' },
   },
-): RecordedCall[] {
-  const calls: RecordedCall[] = []
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === 'POST') {
-        calls.push({
-          url: String(input),
-          body: init.body ? JSON.parse(String(init.body)) : null,
-        })
-        return Promise.resolve(
-          new Response(JSON.stringify(commitResponse.body), {
-            status: commitResponse.status,
-            headers: { 'content-type': 'application/json' },
-          }),
-        )
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify(status), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      )
-    }),
-  )
-  return calls
+) {
+  return stubRepositoryApi(status, { mutation: commitResponse })
 }
 
 const staged = {
@@ -133,6 +105,25 @@ describe('CommitBox', () => {
     await userEvent.click(screen.getByLabelText('이전 커밋 수정(amend)'))
 
     expect(screen.getByRole('button', { name: '커밋' })).toBeEnabled()
+  })
+
+  it('refuses to commit while paths are unmerged, even when staged', async () => {
+    stubApi({
+      staged: [{ path: 'a.txt', type: 'ADDED', oldPath: null }],
+      unstaged: [],
+      conflicted: [{ path: 'both-edited.txt', resolution: 'UNRESOLVED' }],
+    })
+
+    renderBox()
+    await userEvent.type(
+      screen.getByLabelText('커밋 메시지를 입력하세요'),
+      'feat: try anyway',
+    )
+
+    expect(
+      await screen.findByText('충돌을 먼저 해결해야 커밋할 수 있습니다'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '커밋' })).toBeDisabled()
   })
 
   it('sends the amend flag and translates a capability failure', async () => {

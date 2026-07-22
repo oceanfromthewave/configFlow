@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/shared/i18n'
 import { useUiStore } from '@/shared/lib/uiStore'
+import { stubRepositoryApi } from '@/shared/test/apiStub'
 import { WorkingTreePanel } from '@/widgets/WorkingTreePanel'
 
 function renderPanel() {
@@ -20,37 +21,7 @@ function renderPanel() {
   )
 }
 
-interface RecordedCall {
-  url: string
-  body: unknown
-}
-
-/**
- * Answers GET /status with the given payload and 204s every mutation,
- * recording what was posted so the tests can assert on the request itself.
- */
-function stubApi(status: unknown): RecordedCall[] {
-  const calls: RecordedCall[] = []
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === 'POST') {
-        calls.push({
-          url: String(input),
-          body: init.body ? JSON.parse(String(init.body)) : null,
-        })
-        return Promise.resolve(new Response(null, { status: 204 }))
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify(status), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      )
-    }),
-  )
-  return calls
-}
+const stubApi = stubRepositoryApi
 
 const initialUiState = useUiStore.getState()
 
@@ -134,6 +105,38 @@ describe('WorkingTreePanel', () => {
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0].url).toContain('/repositories/repo-1/stage')
     expect(calls[0].body).toEqual({ paths: ['new.txt'] })
+  })
+
+  it('drops a stale failure banner when the other action starts', async () => {
+    // Unstaging fails, staging succeeds — so only the first click leaves a banner.
+    stubRepositoryApi(
+      {
+        staged: [{ path: 'a.txt', type: 'ADDED', oldPath: null }],
+        unstaged: [{ path: 'b.txt', type: 'MODIFIED', oldPath: null }],
+        conflicted: [],
+      },
+      {
+        mutation: (url) =>
+          url.includes('/unstage')
+            ? { status: 500, body: { code: 'INTERNAL_ERROR' } }
+            : { status: 204 },
+      },
+    )
+
+    renderPanel()
+    await userEvent.click(
+      await screen.findByRole('button', { name: '스테이지 해제: a.txt' }),
+    )
+    expect(
+      await screen.findByText(/작업을 처리하지 못했습니다/),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '스테이지: b.txt' }))
+
+    // The unstage error must not survive into the stage attempt's render.
+    await waitFor(() =>
+      expect(screen.queryByText(/작업을 처리하지 못했습니다/)).not.toBeInTheDocument(),
+    )
   })
 
   it('unstages the whole section in one request', async () => {

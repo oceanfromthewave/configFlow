@@ -164,8 +164,16 @@ export function WorkingTreePanel() {
     const busy = stageFiles.isPending || unstageFiles.isPending
     const failure = stageFiles.error ?? unstageFiles.error
 
-    const stage = (paths: string[]) => stageFiles.mutate({repositoryId, paths})
-    const unstage = (paths: string[]) => unstageFiles.mutate({repositoryId, paths})
+    // Starting one action clears the other's banner: `failure` merges both, so a
+    // stale error would otherwise outlive the operation that produced it.
+    const stage = (paths: string[]) => {
+        unstageFiles.reset()
+        stageFiles.mutate({repositoryId, paths})
+    }
+    const unstage = (paths: string[]) => {
+        stageFiles.reset()
+        unstageFiles.mutate({repositoryId, paths})
+    }
 
     const stageAction = (path: string): RowAction => ({
         label: t('workingTree.stageFile'),

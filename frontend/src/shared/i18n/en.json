@@ -74,6 +74,7 @@
   "commit.committing": "Committing…",
   "commit.amend": "Amend the previous commit",
   "commit.nothingStaged": "Nothing is staged",
+  "commit.blockedByConflicts": "Resolve the conflicts before committing",
   "commit.failed": "Could not commit",
   "commit.created": "Created commit {revision}",
   "error.validation": "The request was rejected",
