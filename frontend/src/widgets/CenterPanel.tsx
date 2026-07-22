@@ -27,7 +27,12 @@ export function CenterPanel() {
             </div>
             <div className="min-h-0 flex-1">
                 {centerTab === 'workingTree' ? (
-                    <WorkingTreePanel/>
+                    <div className="flex h-full flex-col">
+                        <div className="min-h-0 flex-1">
+                            <WorkingTreePanel/>
+                        </div>
+                        <CommitBox/>
+                    </div>
                 ) : (
                     <EmptyState
                         icon={<span aria-hidden>&#x2387;</span>}
