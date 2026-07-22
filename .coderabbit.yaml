@@ -13,10 +13,14 @@ reviews:
   review_status: false            # PR마다 "리뷰 상태" 코멘트를 남기지 않아 노이즈 감소
   auto_review:
     enabled: true
-    auto_incremental_review: false  # ★ 매 푸시마다 재리뷰하지 않음 (WIP 커밋 스팸 방지)
+    # 브랜치를 잘게 쪼개 올리고 있어서 PR 하나에 리뷰가 길게 쌓이지 않는다.
+    # 오히려 수동 트리거 왕복이 병목이라 증분 리뷰를 켠다.
+    auto_incremental_review: true
     drafts: false                   # Draft 동안엔 리뷰 안 함 → Ready로 표시할 때 1회 리뷰
     base_branches:
-      - main                        # main을 향한 PR만 자동 리뷰
+      - main
+      # stacked PR은 base가 feature 브랜치라 main만 걸어두면 자동 리뷰에서 빠진다.
+      - "feature/.*"
   # 리뷰할 필요 없는 산출물/자동생성물 제외
   path_filters:
     - "!**/build/**"
@@ -33,7 +37,12 @@ reviews:
         의존하면 지적하라. 모델은 불변(record) 우선.
     - path: "backend/infrastructure/**/*.java"
       instructions: >
-        인프라 어댑터는 엔진(JGit/SVNKit) 예외를 도메인 VcsException 계층으로 번역해야 한다.
+        인프라 어댑터는 엔진(JGit/SVNKit) 예외를 경계에서 반드시 번역해야 한다. 엔진 예외가
+        그대로 밖으로 새면 지적하라. 번역 대상은 둘 중 하나다 — 엔진/IO 자체의 실패는 도메인
+        VcsException 계층으로, 호출자의 잘못된 입력은 ApiExceptionHandler가 HTTP로 매핑하는
+        표준 예외로 보낸다(IllegalArgumentException→400, NoSuchElementException→404,
+        UnsupportedOperationException→CAPABILITY_NOT_SUPPORTED). 후자를 VcsException으로
+        감싸면 사용자 실수가 500으로 보고되므로 오히려 잘못이다.
         자원(Git/Repository 등 AutoCloseable)은 try-with-resources로 닫는지 확인하라.
     - path: "frontend/src/**/*.{ts,tsx}"
       instructions: >
