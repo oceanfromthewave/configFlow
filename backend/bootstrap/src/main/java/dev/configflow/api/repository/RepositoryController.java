@@ -9,12 +9,8 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * Repository management API: list registered repositories, register a local working copy (VCS auto-detected) and mark one as opened. Thin controller — all
@@ -72,6 +68,24 @@ public class RepositoryController
 		}
 	}
 
+	/** POST body for stage/unstage: working-copy-relative paths */
+	public record PathsRequest(List<String> paths)
+	{
+
+	}
+
+	/** POST body for creating a commit. */
+	public record CommitBody(String message, boolean amend)
+	{
+
+	}
+
+	/** The commit that was just created. */
+	public record CommitResponse(String revisionId)
+	{
+
+	}
+
 	private final RepositoryService repositoryService;
 
 	public RepositoryController(RepositoryService repositoryService)
@@ -106,5 +120,47 @@ public class RepositoryController
 	public WorkingTreeStatusResponse status(@PathVariable String id)
 	{
 		return WorkingTreeStatusResponse.from(repositoryService.status(RepositoryId.of(id)));
+	}
+
+	@PostMapping("/{id}/stage")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void stage(@PathVariable String id, @RequestBody PathsRequest request)
+	{
+		repositoryService.stage(RepositoryId.of(id), toPaths(request));
+	}
+
+	@PostMapping("/{id}/unstage")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void unstage(@PathVariable String id, @RequestBody PathsRequest request)
+	{
+		repositoryService.unstage(RepositoryId.of(id), toPaths(request));
+	}
+
+	@PostMapping("/{id}/commit")
+	public CommitResponse commit(@PathVariable String id, @RequestBody CommitBody body)
+	{
+		if(body == null || body.message() == null)
+		{
+			throw new IllegalArgumentException("Request body must contain a 'message' field");
+		}
+		CommitRequest request = new CommitRequest(body.message(), body.amend(), List.of(), false);
+		RevisionId created = repositoryService.commit(RepositoryId.of(id), request);
+		return new CommitResponse(created.value());
+	}
+
+	/** Maps the JSON string paths onto {@link Path}, rejecting an empty selection. */
+	private static List<Path> toPaths(PathsRequest request)
+	{
+		if(request == null || request.paths() == null || request.paths().isEmpty())
+		{
+			throw new IllegalArgumentException("Request body must contain a non-empty 'paths' array");
+		}
+		return request.paths().stream().map(path -> {
+			if(path == null || path.isBlank())
+			{
+				throw new IllegalArgumentException("Path must not be blank");
+			}
+			return Path.of(path);
+		}).toList();
 	}
 }

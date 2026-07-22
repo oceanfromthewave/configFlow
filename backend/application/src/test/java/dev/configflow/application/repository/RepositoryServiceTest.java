@@ -11,11 +11,17 @@ import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.ChangeType;
+import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.FileChange;
+import dev.configflow.domain.vcs.model.HistoryQuery;
 import dev.configflow.domain.vcs.model.IgnorePattern;
+import dev.configflow.domain.vcs.model.Page;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
+import dev.configflow.domain.vcs.model.Revision;
+import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
+import dev.configflow.domain.vcs.port.CommitOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
 import java.nio.file.Path;
@@ -98,6 +104,88 @@ class RepositoryServiceTest {
         assertEquals(NOW, opened.lastOpenedAt());
     }
 
+    @Test
+    void stage_forwardsPathsToTheProvider() {
+        RepositoryId id = service.register(repoDir).id();
+
+        service.stage(id, List.of(Path.of("a.txt"), Path.of("src/b.txt")));
+
+        assertEquals(List.of(Path.of("a.txt"), Path.of("src/b.txt")), provider.staged);
+    }
+
+    @Test
+    void unstage_forwardsPathsToTheProvider() {
+        RepositoryId id = service.register(repoDir).id();
+
+        service.unstage(id, List.of(Path.of("a.txt")));
+
+        assertEquals(List.of(Path.of("a.txt")), provider.unstaged);
+    }
+
+    @Test
+    void stage_rejectsAnEmptySelection() {
+        RepositoryId id = service.register(repoDir).id();
+
+        assertThrows(IllegalArgumentException.class, () -> service.stage(id, List.of()));
+        assertThrows(IllegalArgumentException.class, () -> service.stage(id, null));
+    }
+
+    @Test
+    void stage_rejectsPathsEscapingTheWorkingCopy() {
+        RepositoryId id = service.register(repoDir).id();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.stage(id, List.of(Path.of("../outside.txt"))));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.stage(id, List.of(Path.of("src/../../outside.txt"))));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.stage(id, List.of(repoDir.resolve("absolute.txt"))));
+        assertTrue(provider.staged.isEmpty(), "nothing may reach the provider");
+    }
+
+    @Test
+    void commit_returnsTheCreatedRevisionId() {
+        RepositoryId id = service.register(repoDir).id();
+
+        RevisionId created = service.commit(id, CommitRequest.of("feat: add a thing"));
+
+        assertEquals(FakeGitProvider.CREATED, created);
+        assertEquals("feat: add a thing", provider.lastCommit.message());
+    }
+
+    @Test
+    void commit_rejectsABlankMessage() {
+        RepositoryId id = service.register(repoDir).id();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.commit(id, CommitRequest.of("   ")));
+        assertNull(provider.lastCommit);
+    }
+
+    @Test
+    void commit_rejectsAmendWhenTheProviderCannotAmend() {
+        RepositoryId id = service.register(repoDir).id();
+        provider.capabilities = Set.of(VcsCapability.STAGING);
+        CommitRequest amend = new CommitRequest("reword", true, List.of(), false);
+
+        assertThrows(UnsupportedOperationException.class, () -> service.commit(id, amend));
+        assertNull(provider.lastCommit);
+    }
+
+    @Test
+    void commit_rejectsProvidersWithoutCommitOperations() {
+        BareProvider bare = new BareProvider();
+        provider.detects = false;
+        RepositoryService svnService = new RepositoryService(
+                store,
+                new DefaultVcsProviderRegistry(List.of(provider, bare)),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        RepositoryId id = svnService.register(repoDir).id();
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> svnService.commit(id, CommitRequest.of("nope")));
+    }
+
     // --- fakes: hand-written test doubles of the domain ports ------------
 
     private static final class InMemoryRepositoryStore implements RepositoryStore {
@@ -131,9 +219,17 @@ class RepositoryServiceTest {
         }
     }
 
-    private static final class FakeGitProvider implements VcsProvider, WorkingTreeOperations {
+    private static final class FakeGitProvider
+            implements VcsProvider, WorkingTreeOperations, CommitOperations {
+
+        static final RevisionId CREATED = new RevisionId("0123456789abcdef");
+
         boolean detects = true;
         WorkingTreeStatus status = WorkingTreeStatus.clean();
+        Set<VcsCapability> capabilities = Set.of(VcsCapability.STAGING, VcsCapability.AMEND);
+        final List<Path> staged = new ArrayList<>();
+        final List<Path> unstaged = new ArrayList<>();
+        CommitRequest lastCommit;
 
         @Override
         public VcsType type() {
@@ -142,7 +238,7 @@ class RepositoryServiceTest {
 
         @Override
         public Set<VcsCapability> capabilities() {
-            return Set.of(VcsCapability.STAGING);
+            return capabilities;
         }
 
         @Override
@@ -162,10 +258,12 @@ class RepositoryServiceTest {
 
         @Override
         public void stage(RepositoryHandle repo, List<Path> paths) {
+            staged.addAll(paths);
         }
 
         @Override
         public void unstage(RepositoryHandle repo, List<Path> paths) {
+            unstaged.addAll(paths);
         }
 
         @Override
@@ -174,6 +272,46 @@ class RepositoryServiceTest {
 
         @Override
         public void ignore(RepositoryHandle repo, IgnorePattern pattern) {
+        }
+
+        @Override
+        public RevisionId commit(RepositoryHandle repo, CommitRequest request) {
+            lastCommit = request;
+            return CREATED;
+        }
+
+        @Override
+        public Page<Revision> history(RepositoryHandle repo, HistoryQuery query) {
+            throw new UnsupportedOperationException("not needed by these tests");
+        }
+
+        @Override
+        public Revision show(RepositoryHandle repo, RevisionId id) {
+            throw new UnsupportedOperationException("not needed by these tests");
+        }
+    }
+
+    /** A provider that implements no operation port — stands in for a limited VCS. */
+    private static final class BareProvider implements VcsProvider {
+
+        @Override
+        public VcsType type() {
+            return VcsType.SVN;
+        }
+
+        @Override
+        public Set<VcsCapability> capabilities() {
+            return Set.of();
+        }
+
+        @Override
+        public boolean detect(Path localPath) {
+            return true;
+        }
+
+        @Override
+        public RepositoryHandle open(Path localPath) {
+            return new RepositoryHandle(localPath, VcsType.SVN);
         }
     }
 }
