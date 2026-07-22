@@ -266,6 +266,31 @@ class RepositoryControllerTest {
     }
 
     @Test
+    void history_trimsThePathFilter() throws Exception {
+        when(repositoryService.history(any(), any())).thenReturn(new Page<>(List.of(), null));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/history")
+                        .param("path", "  src/app.ts  "))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<HistoryQuery> captor = ArgumentCaptor.forClass(HistoryQuery.class);
+        verify(repositoryService).history(any(), captor.capture());
+        // Untrimmed, the surrounding spaces become part of the path and match nothing.
+        assertEquals(Path.of("src/app.ts"), captor.getValue().path());
+    }
+
+    @Test
+    void history_malformedRevisionSyntaxIs400() throws Exception {
+        when(repositoryService.history(any(), any()))
+                .thenThrow(new IllegalArgumentException("Not a valid branch or cursor"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/history")
+                        .param("branch", "a:b:c"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void history_serialisesRevisionsWithFlatIds() throws Exception {
         Revision revision = new Revision(
                 new RevisionId("0123456789abcdef"),
