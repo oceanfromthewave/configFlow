@@ -274,6 +274,22 @@ class RepositoryServiceTest {
     }
 
     @Test
+    void compare_reportsABlankRefEvenWhenTheProviderCannotCompare() {
+        BareProvider bare = new BareProvider();
+        provider.detects = false;
+        RepositoryService svnService = new RepositoryService(
+                store,
+                new DefaultVcsProviderRegistry(List.of(provider, bare)),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        RepositoryId id = svnService.register(repoDir).id();
+
+        // Bad input outranks a missing capability: the request was malformed either way.
+        assertThrows(IllegalArgumentException.class, () -> svnService.compare(id, "  ", "main"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> svnService.compare(id, "main", "feature/x"));
+    }
+
+    @Test
     void commit_rejectsProvidersWithoutCommitOperations() {
         BareProvider bare = new BareProvider();
         provider.detects = false;
