@@ -2,6 +2,7 @@ package dev.configflow.infrastructure.git;
 
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.CommitRequest;
+import dev.configflow.domain.vcs.model.FileDiff;
 import dev.configflow.domain.vcs.model.HistoryQuery;
 import dev.configflow.domain.vcs.model.IgnorePattern;
 import dev.configflow.domain.vcs.model.Page;
@@ -11,6 +12,7 @@ import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
 import dev.configflow.domain.vcs.port.CommitOperations;
+import dev.configflow.domain.vcs.port.DiffOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
 
@@ -27,7 +29,7 @@ import org.eclipse.jgit.util.FS;
  * <p>Implements the operation ports Git actually supports; callers discover them by
  * checking {@link #capabilities()} and narrowing with {@code instanceof}.</p>
  */
-public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations, CommitOperations
+public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -35,6 +37,7 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 
 	private final GitWorkingTree workingTree;
 	private final GitCommits commits;
+	private final GitDiff diffs;
 
 	public GitVcsProvider()
 	{
@@ -43,13 +46,14 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
-		this(new GitWorkingTree(access), new GitCommits(access));
+		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access));
 	}
 
-	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits)
+	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
+		this.diffs = diffs;
 	}
 
 	@Override
@@ -131,5 +135,23 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 	public Revision show(RepositoryHandle repo, RevisionId id)
 	{
 		return commits.show(repo, id);
+	}
+
+	@Override
+	public FileDiff diffWorking(RepositoryHandle repo, Path path, boolean staged)
+	{
+		return diffs.diffWorking(repo, path, staged);
+	}
+
+	@Override
+	public FileDiff diffRevisions(RepositoryHandle repo, RevisionId from, RevisionId to, Path path)
+	{
+		return diffs.diffRevisions(repo, from, to, path);
+	}
+
+	@Override
+	public String contentAt(RepositoryHandle repo, RevisionId revision, Path path)
+	{
+		return diffs.contentAt(repo, revision, path);
 	}
 }

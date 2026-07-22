@@ -15,6 +15,7 @@ import dev.configflow.domain.vcs.model.Author;
 import dev.configflow.domain.vcs.model.ChangeType;
 import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.FileChange;
+import dev.configflow.domain.vcs.model.FileDiff;
 import dev.configflow.domain.vcs.model.HistoryQuery;
 import dev.configflow.domain.vcs.model.IgnorePattern;
 import dev.configflow.domain.vcs.model.Page;
@@ -24,6 +25,7 @@ import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
 import dev.configflow.domain.vcs.port.CommitOperations;
+import dev.configflow.domain.vcs.port.DiffOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
 import java.nio.file.Path;
@@ -216,6 +218,30 @@ class RepositoryServiceTest {
     }
 
     @Test
+    void diffWorking_forwardsThePathAndTheStagedFlag() {
+        RepositoryId id = service.register(repoDir).id();
+
+        FileDiff diff = service.diffWorking(id, Path.of("src/app.ts"), true);
+
+        assertEquals(Path.of("src/app.ts"), provider.lastDiffPath);
+        assertTrue(provider.lastDiffStaged);
+        assertEquals(ChangeType.MODIFIED, diff.type());
+    }
+
+    @Test
+    void diffWorking_rejectsPathsEscapingTheWorkingCopy() {
+        RepositoryId id = service.register(repoDir).id();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.diffWorking(id, Path.of("../outside.txt"), false));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.diffWorking(id, repoDir.resolve("absolute.txt"), false));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.diffWorking(id, null, false));
+        assertNull(provider.lastDiffPath, "nothing may reach the provider");
+    }
+
+    @Test
     void commit_rejectsProvidersWithoutCommitOperations() {
         BareProvider bare = new BareProvider();
         provider.detects = false;
@@ -263,7 +289,7 @@ class RepositoryServiceTest {
     }
 
     private static final class FakeGitProvider
-            implements VcsProvider, WorkingTreeOperations, CommitOperations {
+            implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations {
 
         static final RevisionId CREATED = new RevisionId("0123456789abcdef");
         static final Revision REVISION = new Revision(
@@ -282,6 +308,8 @@ class RepositoryServiceTest {
         CommitRequest lastCommit;
         HistoryQuery lastQuery;
         RevisionId lastShown;
+        Path lastDiffPath;
+        boolean lastDiffStaged;
 
         @Override
         public VcsType type() {
@@ -342,6 +370,24 @@ class RepositoryServiceTest {
         public Revision show(RepositoryHandle repo, RevisionId id) {
             lastShown = id;
             return REVISION;
+        }
+
+        @Override
+        public FileDiff diffWorking(RepositoryHandle repo, Path path, boolean staged) {
+            lastDiffPath = path;
+            lastDiffStaged = staged;
+            return new FileDiff(path, null, ChangeType.MODIFIED, false, List.of());
+        }
+
+        @Override
+        public FileDiff diffRevisions(
+                RepositoryHandle repo, RevisionId from, RevisionId to, Path path) {
+            throw new UnsupportedOperationException("not needed by these tests");
+        }
+
+        @Override
+        public String contentAt(RepositoryHandle repo, RevisionId revision, Path path) {
+            throw new UnsupportedOperationException("not needed by these tests");
         }
     }
 

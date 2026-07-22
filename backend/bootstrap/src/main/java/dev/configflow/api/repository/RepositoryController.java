@@ -44,8 +44,7 @@ public class RepositoryController
 	{
 		static FileChangeResponse from(FileChange change)
 		{
-			Path oldPath = change.oldPath();
-			return new FileChangeResponse(change.path().toString(), change.type(), oldPath != null ? oldPath.toString() : null);
+			return new FileChangeResponse(apiPath(change.path()), change.type(), apiPath(change.oldPath()));
 		}
 	}
 
@@ -54,7 +53,7 @@ public class RepositoryController
 	{
 		static ConflictedFileResponse from(ConflictedFile file)
 		{
-			return new ConflictedFileResponse(file.path().toString(), file.resolution());
+			return new ConflictedFileResponse(apiPath(file.path()), file.resolution());
 		}
 	}
 
@@ -122,6 +121,25 @@ public class RepositoryController
 		static HistoryPageResponse from(Page<Revision> page)
 		{
 			return new HistoryPageResponse(page.items().stream().map(RevisionResponse::from).toList(), page.nextCursor());
+		}
+	}
+
+	/** One hunk of a unified diff; lines keep their {@code ' '}/{@code '+'}/{@code '-'} prefix. */
+	public record DiffHunkResponse(int oldStart, int oldCount, int newStart, int newCount, List<String> lines)
+	{
+		static DiffHunkResponse from(DiffHunk hunk)
+		{
+			return new DiffHunkResponse(hunk.oldStart(), hunk.oldCount(), hunk.newStart(), hunk.newCount(), hunk.lines());
+		}
+	}
+
+	/** Structured diff of one file; {@code hunks} is empty for binary and unchanged files. */
+	public record FileDiffResponse(String path, String oldPath, ChangeType type, boolean binary, List<DiffHunkResponse> hunks)
+	{
+		static FileDiffResponse from(FileDiff diff)
+		{
+			return new FileDiffResponse(apiPath(diff.path()), apiPath(diff.oldPath()), diff.type(), diff.binary(),
+					diff.hunks().stream().map(DiffHunkResponse::from).toList());
 		}
 	}
 
@@ -232,6 +250,44 @@ public class RepositoryController
 		{
 			throw new IllegalArgumentException("'" + field + "' must be an ISO-8601 instant, was: " + trimmed, e);
 		}
+	}
+
+	/**
+	 * Diff of one working-copy file.
+	 *
+	 * @param staged {@code true} shows what a commit would record (HEAD against the index),
+	 *               {@code false} what is still unstaged (index against the working tree)
+	 */
+	@GetMapping("/{id}/diff")
+	public FileDiffResponse diffWorking(@PathVariable String id, @RequestParam(required = false) String path,
+										@RequestParam(defaultValue = "false") boolean staged)
+	{
+		return FileDiffResponse.from(repositoryService.diffWorking(RepositoryId.of(id), toPath(path), staged));
+	}
+
+	/**
+	 * Maps one client-supplied path onto {@link Path}, rejecting a blank value.
+	 *
+	 * <p>Declared optional on purpose: a missing required parameter makes Spring fail
+	 * before the method runs, which would surface as a 500 instead of a 400.</p>
+	 */
+	private static Path toPath(String path)
+	{
+		String trimmed = trimmed(path);
+		if(trimmed == null)
+		{
+			throw new IllegalArgumentException("A 'path' parameter is required");
+		}
+		return Path.of(trimmed);
+	}
+
+	/**
+	 * Renders a path the way the API talks about paths: relative to the repository root
+	 * and always with {@code /}, so a client never sees Windows separators.
+	 */
+	private static String apiPath(Path path)
+	{
+		return path == null ? null : path.toString().replace('\\', '/');
 	}
 
 	/** Maps the JSON string paths onto {@link Path}, rejecting an empty selection. */
