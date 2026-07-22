@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
+import org.eclipse.jgit.errors.AmbiguousObjectException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.errors.RevisionSyntaxException;
 import org.eclipse.jgit.lib.AnyObjectId;
@@ -118,6 +119,10 @@ final class GitCommits
 			// error. A malformed cursor or branch is the caller's mistake, hence 400.
 			throw new IllegalArgumentException("Not a valid branch or cursor: " + e.getMessage(), e);
 		}
+		catch(AmbiguousObjectException e)
+		{
+			throw new IllegalArgumentException("Ambiguous cursor or branch: " + e.getMessage(), e);
+		}
 		catch(IOException e)
 		{
 			throw new VcsException("Failed to read history of " + repo.localPath(), e);
@@ -148,6 +153,14 @@ final class GitCommits
 		catch(RevisionSyntaxException e)
 		{
 			throw new IllegalArgumentException("Not a valid revision: " + id.value(), e);
+		}
+		catch(AmbiguousObjectException e)
+		{
+			// An abbreviation that matches several objects is an IOException subtype, so it
+			// would land in the catch below and be reported as a server fault. The caller
+			// simply has to type more characters.
+			throw new IllegalArgumentException(
+					"Ambiguous revision: " + id.value() + " matches several objects", e);
 		}
 		catch(IOException e)
 		{
