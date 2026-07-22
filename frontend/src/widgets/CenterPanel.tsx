@@ -1,7 +1,9 @@
 import {useT} from '@/shared/i18n'
 import {useUiStore, type CenterTab} from '@/shared/lib/uiStore'
-import {EmptyState, Tabs} from '@/shared/ui'
-import {WorkingTreePanel} from "@/widgets/WorkingTreePanel.tsx";
+import {Tabs} from '@/shared/ui'
+import {CommitBox} from '@/widgets/CommitBox'
+import {HistoryPanel} from '@/widgets/HistoryPanel'
+import {WorkingTreePanel} from '@/widgets/WorkingTreePanel'
 
 /** Center area (docs/06 §1): [History | Working Tree] tabs + content. */
 export function CenterPanel() {
@@ -34,11 +36,7 @@ export function CenterPanel() {
                         <CommitBox/>
                     </div>
                 ) : (
-                    <EmptyState
-                        icon={<span aria-hidden>&#x2387;</span>}
-                        title={t('center.emptyTitle')}
-                        description={t('center.emptyDescription')}
-                    />
+                    <HistoryPanel/>
                 )}
             </div>
         </div>

@@ -12,9 +12,12 @@ import dev.configflow.domain.vcs.model.RevisionId;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.errors.IncorrectObjectTypeException;
+import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
@@ -129,6 +132,12 @@ final class GitCommits
 				return toRevision(walk.parseCommit(objectId), repository.getAllRefsByPeeledObjectId(), repository.resolve(Constants.HEAD));
 			}
 		}
+		catch(MissingObjectException | IncorrectObjectTypeException e)
+		{
+			// A well-formed but absent SHA parses fine, so resolve() returns non-null and
+			// the miss only surfaces here — same "not found" answer as an unknown name.
+			throw new NoSuchElementException("Revision not found: " + id.value() + " in " + repo.localPath());
+		}
 		catch(IOException e)
 		{
 			throw new VcsException("Failed to read revision " + id.value(), e);
@@ -152,14 +161,13 @@ final class GitCommits
 	private static void applyFilters(RevWalk walk, HistoryQuery query)
 	{
 		List<RevFilter> filters = new ArrayList<>();
-		if(query.author() != null)
+		if(hasText(query.author()))
 		{
-			// create() builds a case-insensitive substring match on the author line.
-			filters.add(AuthorRevFilter.create(query.author()));
+			filters.add(AuthorRevFilter.create(Pattern.quote(query.author())));
 		}
-		if(query.messageContains() != null)
+		if(hasText(query.messageContains()))
 		{
-			filters.add(MessageRevFilter.create(query.messageContains()));
+			filters.add(MessageRevFilter.create(Pattern.quote(query.messageContains())));
 		}
 		if(query.from() != null && query.to() != null)
 		{
@@ -226,5 +234,10 @@ final class GitCommits
 			}
 		}
 		return labels;
+	}
+
+	private static boolean hasText(String value)
+	{
+		return value != null && !value.isBlank();
 	}
 }
