@@ -257,6 +257,31 @@ class GitCommitsTest {
                 () -> commits.show(handle, new RevisionId("0".repeat(40))));
     }
 
+    @Test
+    void show_malformedRevisionIsRejectedAsBadInput() throws Exception {
+        commitFile("a.txt", "1", "only commit");
+
+        // JGit throws RevisionSyntaxException, which is unchecked and not an IOException,
+        // so it would escape untranslated if we did not catch it.
+        assertThrows(IllegalArgumentException.class,
+                () -> commits.show(handle, new RevisionId("HEAD^{")));
+        assertThrows(IllegalArgumentException.class,
+                () -> commits.show(handle, new RevisionId("a b")));
+    }
+
+    @Test
+    void history_malformedCursorOrBranchIsRejectedAsBadInput() throws Exception {
+        commitFile("a.txt", "1", "only commit");
+
+        // "a b" is a plausible typo for a branch name; ".." is what a stray path yields.
+        assertThrows(IllegalArgumentException.class, () -> commits.history(handle,
+                new HistoryQuery("HEAD^{", 10, null, null, null, null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> commits.history(handle,
+                new HistoryQuery(null, 10, "a b", null, null, null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> commits.history(handle,
+                new HistoryQuery(null, 10, "..", null, null, null, null, null)));
+    }
+
     // --- fixture helpers -------------------------------------------------
 
     private static HistoryQuery pageAfter(String cursor, int limit) {

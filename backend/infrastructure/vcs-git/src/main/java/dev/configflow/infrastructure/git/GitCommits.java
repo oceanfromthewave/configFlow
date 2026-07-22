@@ -18,6 +18,7 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.errors.RevisionSyntaxException;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
@@ -111,6 +112,12 @@ final class GitCommits
 				return new Page<>(items, nextCursor);
 			}
 		}
+		catch(RevisionSyntaxException e)
+		{
+			// Unchecked and not an IOException, so it would otherwise escape as a raw JGit
+			// error. A malformed cursor or branch is the caller's mistake, hence 400.
+			throw new IllegalArgumentException("Not a valid branch or cursor: " + e.getMessage(), e);
+		}
 		catch(IOException e)
 		{
 			throw new VcsException("Failed to read history of " + repo.localPath(), e);
@@ -137,6 +144,10 @@ final class GitCommits
 			// A well-formed but absent SHA parses fine, so resolve() returns non-null and
 			// the miss only surfaces here — same "not found" answer as an unknown name.
 			throw new NoSuchElementException("Revision not found: " + id.value() + " in " + repo.localPath());
+		}
+		catch(RevisionSyntaxException e)
+		{
+			throw new IllegalArgumentException("Not a valid revision: " + id.value(), e);
 		}
 		catch(IOException e)
 		{

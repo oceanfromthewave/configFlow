@@ -193,8 +193,9 @@ public class RepositoryController
 									   @RequestParam(required = false) String message, @RequestParam(required = false) String path,
 									   @RequestParam(required = false) String from, @RequestParam(required = false) String to)
 	{
+		String trimmedPath = trimmed(path);
 		HistoryQuery query = new HistoryQuery(trimmed(cursor), limit, trimmed(branch), trimmed(author), trimmed(message),
-				path != null && !path.isBlank() ? Path.of(path) : null, instant(from, "from"), instant(to, "to"));
+				trimmedPath != null ? Path.of(trimmedPath) : null, instant(from, "from"), instant(to, "to"));
 		return HistoryPageResponse.from(repositoryService.history(RepositoryId.of(id), query));
 	}
 
