@@ -16,7 +16,9 @@ reviews:
     # 브랜치를 잘게 쪼개 올리고 있어서 PR 하나에 리뷰가 길게 쌓이지 않는다.
     # 오히려 수동 트리거 왕복이 병목이라 증분 리뷰를 켠다.
     auto_incremental_review: true
-    drafts: false                   # Draft 동안엔 리뷰 안 함 → Ready로 표시할 때 1회 리뷰
+    # Draft 동안엔 리뷰하지 않는다. Ready로 표시하면 리뷰가 시작되고,
+    # 그 뒤 푸시마다 증분 리뷰가 이어진다(위 auto_incremental_review).
+    drafts: false
     base_branches:
       - main
       # stacked PR은 base가 feature 브랜치라 main만 걸어두면 자동 리뷰에서 빠진다.
@@ -38,11 +40,14 @@ reviews:
     - path: "backend/infrastructure/**/*.java"
       instructions: >
         인프라 어댑터는 엔진(JGit/SVNKit) 예외를 경계에서 반드시 번역해야 한다. 엔진 예외가
-        그대로 밖으로 새면 지적하라. 번역 대상은 둘 중 하나다 — 엔진/IO 자체의 실패는 도메인
-        VcsException 계층으로, 호출자의 잘못된 입력은 ApiExceptionHandler가 HTTP로 매핑하는
-        표준 예외로 보낸다(IllegalArgumentException→400, NoSuchElementException→404,
-        UnsupportedOperationException→CAPABILITY_NOT_SUPPORTED). 후자를 VcsException으로
-        감싸면 사용자 실수가 500으로 보고되므로 오히려 잘못이다.
+        그대로 밖으로 새면 지적하라. 행선지는 원인에 따라 넷으로 갈린다.
+        (1) 엔진/IO 자체의 실패 → 도메인 VcsException 계층 (500).
+        (2) 호출자가 보낸 값이 잘못됨 → IllegalArgumentException (400).
+        (3) 대상이 존재하지 않음 → NoSuchElementException (404).
+        (4) 그 VCS가 지원하지 않는 동작 → UnsupportedOperationException
+        (CAPABILITY_NOT_SUPPORTED). (4)는 입력 오류가 아니라 provider의 capability 문제이므로
+        (2)와 구분해서 다뤄야 한다. (2)~(4)를 VcsException으로 감싸면 사용자 실수나 미지원
+        기능이 500으로 보고되므로 오히려 잘못이다.
         자원(Git/Repository 등 AutoCloseable)은 try-with-resources로 닫는지 확인하라.
     - path: "frontend/src/**/*.{ts,tsx}"
       instructions: >
