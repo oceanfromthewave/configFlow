@@ -6,6 +6,7 @@ import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
 import dev.configflow.domain.vcs.port.CommitOperations;
+import dev.configflow.domain.vcs.port.DiffOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.VcsProviderRegistry;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
@@ -160,6 +161,19 @@ public final class RepositoryService
 	}
 
 	/**
+	 * Diffs a working-copy file.
+	 *
+	 * @param staged {@code true} compares HEAD against the index — what a commit would
+	 *               record — while {@code false} compares the index against the working
+	 *               tree, i.e. what is not staged yet
+	 */
+	public FileDiff diffWorking(RepositoryId id, Path path, boolean staged) {
+		Path safePath = requirePath(path);
+		Opened<DiffOperations> opened = openWith(id, DiffOperations.class);
+		return opened.operations().diffWorking(opened.handle(), safePath, staged);
+	}
+
+	/**
 	 * Resolves a registered repository into a live handle plus the requested operation port.
 	 *
 	 * @throws NoSuchElementException
@@ -194,14 +208,20 @@ public final class RepositoryService
 		{
 			throw new IllegalArgumentException("At least one path is required");
 		}
-		for(Path path : paths)
+		return paths.stream().map(RepositoryService::requirePath).toList();
+	}
+
+	private static Path requirePath(Path path)
+	{
+		if(path == null)
 		{
-			if(path.isAbsolute() || path.normalize().startsWith(".."))
-			{
-				throw new IllegalArgumentException("Path must be inside the working copy: " + path);
-			}
+			throw new IllegalArgumentException("A path is required");
 		}
-		return List.copyOf(paths);
+		if(path.isAbsolute() || path.normalize().startsWith(".."))
+		{
+			throw new IllegalArgumentException("Path must be inside the working copy: " + path);
+		}
+		return path;
 	}
 
 	private Repository require(RepositoryId id)

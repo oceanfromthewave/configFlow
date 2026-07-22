@@ -3,6 +3,7 @@ package dev.configflow.api.repository;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -19,7 +20,9 @@ import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.vcs.model.Author;
 import dev.configflow.domain.vcs.model.ChangeType;
 import dev.configflow.domain.vcs.model.CommitRequest;
+import dev.configflow.domain.vcs.model.DiffHunk;
 import dev.configflow.domain.vcs.model.FileChange;
+import dev.configflow.domain.vcs.model.FileDiff;
 import dev.configflow.domain.vcs.model.HistoryQuery;
 import dev.configflow.domain.vcs.model.Page;
 import dev.configflow.domain.vcs.model.RefLabel;
@@ -124,14 +127,15 @@ class RepositoryControllerTest {
     @Test
     void status_returnsBucketsAsJson() throws Exception {
         WorkingTreeStatus status = new WorkingTreeStatus(
-                List.of(FileChange.of(Path.of("staged.txt"), ChangeType.ADDED)),
+                List.of(FileChange.of(Path.of("src/staged.txt"), ChangeType.ADDED)),
                 List.of(FileChange.of(Path.of("changed.txt"), ChangeType.MODIFIED)),
                 List.of());
         when(repositoryService.status(any())).thenReturn(status);
 
         mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/status"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.staged[0].path").value("staged.txt"))
+                // Always '/', even though Path renders '\' on Windows.
+                .andExpect(jsonPath("$.staged[0].path").value("src/staged.txt"))
                 .andExpect(jsonPath("$.staged[0].type").value("ADDED"))
                 .andExpect(jsonPath("$.unstaged[0].type").value("MODIFIED"))
                 .andExpect(jsonPath("$.conflicted").isEmpty());
@@ -366,6 +370,85 @@ class RepositoryControllerTest {
         mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/deadbeef"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    void diffWorking_returnsHunksAndForwardsTheStagedFlag() throws Exception {
+        FileDiff diff = new FileDiff(
+                Path.of("src/app.ts"), null, ChangeType.MODIFIED, false,
+                List.of(new DiffHunk(1, 3, 1, 4, List.of(" keep", "-old", "+new", "+extra"))));
+        when(repositoryService.diffWorking(any(), any(), anyBoolean())).thenReturn(diff);
+        String id = UUID.randomUUID().toString();
+
+        mvc.perform(get("/api/v1/repositories/" + id + "/diff")
+                        .param("path", "src/app.ts")
+                        .param("staged", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.path").value("src/app.ts"))
+                .andExpect(jsonPath("$.type").value("MODIFIED"))
+                .andExpect(jsonPath("$.binary").value(false))
+                .andExpect(jsonPath("$.hunks[0].newCount").value(4))
+                .andExpect(jsonPath("$.hunks[0].lines[1]").value("-old"));
+
+        verify(repositoryService).diffWorking(
+                eq(RepositoryId.of(id)), eq(Path.of("src/app.ts")), eq(true));
+    }
+
+    @Test
+    void diffWorking_defaultsToTheUnstagedSide() throws Exception {
+        when(repositoryService.diffWorking(any(), any(), anyBoolean())).thenReturn(
+                new FileDiff(Path.of("a.txt"), null, ChangeType.MODIFIED, false, List.of()));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/diff")
+                        .param("path", "a.txt"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hunks").isEmpty());
+
+        verify(repositoryService).diffWorking(any(), any(), eq(false));
+    }
+
+    @Test
+    void diffWorking_reportsBinaryFilesWithoutHunks() throws Exception {
+        when(repositoryService.diffWorking(any(), any(), anyBoolean())).thenReturn(
+                new FileDiff(Path.of("logo.png"), null, ChangeType.ADDED, true, List.of()));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/diff")
+                        .param("path", "logo.png"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.binary").value(true))
+                .andExpect(jsonPath("$.hunks").isEmpty());
+    }
+
+    @Test
+    void diffWorking_missingPathIs400() throws Exception {
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/diff"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(repositoryService, never()).diffWorking(any(), any(), anyBoolean());
+    }
+
+    @Test
+    void diffWorking_blankPathIs400() throws Exception {
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/diff")
+                        .param("path", "  "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(repositoryService, never()).diffWorking(any(), any(), anyBoolean());
+    }
+
+    @Test
+    void diffWorking_reportsARenameWithItsPreviousPath() throws Exception {
+        when(repositoryService.diffWorking(any(), any(), anyBoolean())).thenReturn(
+                new FileDiff(Path.of("new.txt"), Path.of("old.txt"), ChangeType.RENAMED,
+                        false, List.of()));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/diff")
+                        .param("path", "new.txt"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.type").value("RENAMED"))
+                .andExpect(jsonPath("$.oldPath").value("old.txt"));
     }
 
     @Test
