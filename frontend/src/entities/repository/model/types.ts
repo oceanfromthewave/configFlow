@@ -46,3 +46,42 @@ export interface WorkingTreeStatus {
   unstaged: FileChange[]
   conflicted: ConflictedFile[]
 }
+
+export interface RevisionAuthor {
+  name: string
+  email?: string | null
+}
+
+/** Kinds of ref decoration the commit list renders differently. */
+export type RefLabelKind = 'BRANCH' | 'REMOTE_BRANCH' | 'TAG' | 'HEAD'
+
+export interface RefLabel {
+  kind: RefLabelKind
+  name: string
+}
+
+/** One commit (Git) or revision (SVN) as returned by the history endpoint. */
+export interface Revision {
+  id: string
+  parents: string[]
+  author: RevisionAuthor
+  timestamp: string
+  message: string
+  labels: RefLabel[]
+}
+
+/** One page of history plus the cursor that fetches the next one. */
+export interface HistoryPage {
+  items: Revision[]
+  nextCursor: string | null
+}
+
+/** Optional filters accepted by `GET /repositories/{id}/history`. */
+export interface HistoryFilters {
+  branch?: string
+  author?: string
+  message?: string
+  path?: string
+  from?: string
+  to?: string
+}

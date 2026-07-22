@@ -7,6 +7,7 @@ import dev.configflow.domain.vcs.model.*;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
@@ -86,6 +87,44 @@ public class RepositoryController
 
 	}
 
+	/** Author, flattened for the client. */
+	public record AuthorResponse(String name, String email)
+	{
+		static AuthorResponse from(Author author)
+		{
+			return new AuthorResponse(author.name(), author.email());
+		}
+	}
+
+	/** A branch/tag/HEAD decoration on a revision. */
+	public record RefLabelResponse(RefLabel.Kind kind, String name)
+	{
+		static RefLabelResponse from(RefLabel label)
+		{
+			return new RefLabelResponse(label.kind(), label.name());
+		}
+	}
+
+	/** One revision; ids are plain strings rather than nested objects. */
+	public record RevisionResponse(String id, List<String> parents, AuthorResponse author, Instant timestamp, String message, List<RefLabelResponse> labels)
+	{
+		static RevisionResponse from(Revision revision)
+		{
+			return new RevisionResponse(revision.id().value(), revision.parents().stream().map(RevisionId::value).toList(),
+					AuthorResponse.from(revision.author()), revision.timestamp(), revision.message(),
+					revision.labels().stream().map(RefLabelResponse::from).toList());
+		}
+	}
+
+	/** One page of history plus the cursor that fetches the next one. */
+	public record HistoryPageResponse(List<RevisionResponse> items, String nextCursor)
+	{
+		static HistoryPageResponse from(Page<Revision> page)
+		{
+			return new HistoryPageResponse(page.items().stream().map(RevisionResponse::from).toList(), page.nextCursor());
+		}
+	}
+
 	private final RepositoryService repositoryService;
 
 	public RepositoryController(RepositoryService repositoryService)
@@ -146,6 +185,52 @@ public class RepositoryController
 		CommitRequest request = new CommitRequest(body.message(), body.amend(), List.of(), false);
 		RevisionId created = repositoryService.commit(RepositoryId.of(id), request);
 		return new CommitResponse(created.value());
+	}
+
+	@GetMapping("/{id}/history")
+	public HistoryPageResponse history(@PathVariable String id, @RequestParam(required = false) String cursor, @RequestParam(defaultValue = "50") int limit,
+									   @RequestParam(required = false) String branch, @RequestParam(required = false) String author,
+									   @RequestParam(required = false) String message, @RequestParam(required = false) String path,
+									   @RequestParam(required = false) String from, @RequestParam(required = false) String to)
+	{
+		HistoryQuery query = new HistoryQuery(trimmed(cursor), limit, trimmed(branch), trimmed(author), trimmed(message),
+				path != null && !path.isBlank() ? Path.of(path) : null, instant(from, "from"), instant(to, "to"));
+		return HistoryPageResponse.from(repositoryService.history(RepositoryId.of(id), query));
+	}
+
+	@GetMapping("/{id}/commits/{revision}")
+	public RevisionResponse show(@PathVariable String id, @PathVariable String revision)
+	{
+		return RevisionResponse.from(repositoryService.show(RepositoryId.of(id), new RevisionId(revision)));
+	}
+
+	/** Blank query parameters mean "no filter", not "match the empty string". */
+	private static String trimmed(String value)
+	{
+		if(value == null)
+		{
+			return null;
+		}
+		String trimmed = value.trim();
+		return trimmed.isEmpty() ? null : trimmed;
+	}
+
+	/** Parses an ISO-8601 instant, reporting a bad value as a 400 rather than a 500. */
+	private static Instant instant(String value, String field)
+	{
+		String trimmed = trimmed(value);
+		if(trimmed == null)
+		{
+			return null;
+		}
+		try
+		{
+			return Instant.parse(trimmed);
+		}
+		catch(DateTimeParseException e)
+		{
+			throw new IllegalArgumentException("'" + field + "' must be an ISO-8601 instant, was: " + trimmed, e);
+		}
 	}
 
 	/** Maps the JSON string paths onto {@link Path}, rejecting an empty selection. */

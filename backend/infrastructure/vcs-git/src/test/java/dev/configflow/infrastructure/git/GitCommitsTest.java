@@ -3,6 +3,7 @@ package dev.configflow.infrastructure.git;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.configflow.domain.vcs.model.CommitRequest;
@@ -18,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -186,6 +188,73 @@ class GitCommitsTest {
 
         assertTrue(page.items().isEmpty());
         assertFalse(page.hasNext());
+    }
+
+    @Test
+    void history_treatsFilterInputAsLiteralText() throws Exception {
+        commitFile("a.txt", "1", "support C++ builds");
+        commitFile("b.txt", "2", "support C  builds");
+
+        // Raw, this is a regex: `+` would quantify and never match the literal text.
+        Page<Revision> page = commits.history(handle,
+                new HistoryQuery(null, 10, null, null, "C++", null, null, null));
+
+        assertEquals(List.of("support C++ builds"), messagesOf(page));
+    }
+
+    @Test
+    void history_doesNotCompileFilterInputThatIsInvalidRegex() throws Exception {
+        commitFile("a.txt", "1", "fix bug (again)");
+
+        // `(again` is an unbalanced group: compiled as a regex this throws.
+        Page<Revision> byMessage = commits.history(handle,
+                new HistoryQuery(null, 10, null, null, "(again", null, null, null));
+        Page<Revision> byAuthor = commits.history(handle,
+                new HistoryQuery(null, 10, null, "[unclosed", null, null, null, null));
+
+        assertEquals(1, byMessage.items().size());
+        assertTrue(byAuthor.items().isEmpty());
+    }
+
+    @Test
+    void history_ignoresBlankFilters() throws Exception {
+        commitFile("a.txt", "1", "only commit");
+
+        // JGit rejects an empty pattern outright, so blanks must not reach it.
+        Page<Revision> page = commits.history(handle,
+                new HistoryQuery(null, 10, null, "  ", "", null, null, null));
+
+        assertEquals(1, page.items().size());
+    }
+
+    // --- show ------------------------------------------------------------
+
+    @Test
+    void show_returnsTheRequestedRevision() throws Exception {
+        RevisionId first = commitFile("a.txt", "1", "first");
+        commitFile("b.txt", "2", "second");
+
+        Revision revision = commits.show(handle, first);
+
+        assertEquals(first.value(), revision.id().value());
+        assertEquals("first", revision.message().trim());
+    }
+
+    @Test
+    void show_acceptsAnythingGitCanResolve() throws Exception {
+        RevisionId id = commitFile("a.txt", "1", "only commit");
+
+        assertEquals(id.value(), commits.show(handle, new RevisionId("HEAD")).id().value());
+        assertEquals(id.value(),
+                commits.show(handle, new RevisionId(id.value().substring(0, 7))).id().value());
+    }
+
+    @Test
+    void show_unknownRevisionIsNotFound() throws Exception {
+        commitFile("a.txt", "1", "only commit");
+
+        assertThrows(NoSuchElementException.class,
+                () -> commits.show(handle, new RevisionId("0".repeat(40))));
     }
 
     // --- fixture helpers -------------------------------------------------

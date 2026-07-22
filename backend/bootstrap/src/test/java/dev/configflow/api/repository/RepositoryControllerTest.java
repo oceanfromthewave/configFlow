@@ -1,6 +1,7 @@
 package dev.configflow.api.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -15,9 +16,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import dev.configflow.application.repository.RepositoryService;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
+import dev.configflow.domain.vcs.model.Author;
 import dev.configflow.domain.vcs.model.ChangeType;
 import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.FileChange;
+import dev.configflow.domain.vcs.model.HistoryQuery;
+import dev.configflow.domain.vcs.model.Page;
+import dev.configflow.domain.vcs.model.RefLabel;
+import dev.configflow.domain.vcs.model.Revision;
 import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
@@ -208,6 +214,133 @@ class RepositoryControllerTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         verify(repositoryService, never()).commit(any(), any());
+    }
+
+    @Test
+    void history_mapsEveryFilterOntoTheQuery() throws Exception {
+        when(repositoryService.history(any(), any())).thenReturn(new Page<>(List.of(), null));
+        String id = UUID.randomUUID().toString();
+
+        mvc.perform(get("/api/v1/repositories/" + id + "/history")
+                        .param("cursor", "abc123")
+                        .param("limit", "25")
+                        .param("branch", "main")
+                        .param("author", "alice")
+                        .param("message", "fix")
+                        .param("path", "src/app.ts")
+                        .param("from", "2026-01-01T00:00:00Z")
+                        .param("to", "2026-02-01T00:00:00Z"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<HistoryQuery> captor = ArgumentCaptor.forClass(HistoryQuery.class);
+        verify(repositoryService).history(eq(RepositoryId.of(id)), captor.capture());
+        HistoryQuery query = captor.getValue();
+        assertEquals("abc123", query.cursor());
+        assertEquals(25, query.limit());
+        assertEquals("main", query.branch());
+        assertEquals("alice", query.author());
+        assertEquals("fix", query.messageContains());
+        assertEquals(Path.of("src/app.ts"), query.path());
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), query.from());
+        assertEquals(Instant.parse("2026-02-01T00:00:00Z"), query.to());
+    }
+
+    @Test
+    void history_omittedFiltersBecomeNullAndBlanksAreDropped() throws Exception {
+        when(repositoryService.history(any(), any())).thenReturn(new Page<>(List.of(), null));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/history")
+                        .param("author", "   "))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<HistoryQuery> captor = ArgumentCaptor.forClass(HistoryQuery.class);
+        verify(repositoryService).history(any(), captor.capture());
+        HistoryQuery query = captor.getValue();
+        assertEquals(50, query.limit(), "the default page size");
+        assertNull(query.cursor());
+        // A blank filter means "no filter", not "match the empty string".
+        assertNull(query.author());
+        assertNull(query.branch());
+        assertNull(query.path());
+        assertNull(query.from());
+    }
+
+    @Test
+    void history_serialisesRevisionsWithFlatIds() throws Exception {
+        Revision revision = new Revision(
+                new RevisionId("0123456789abcdef"),
+                List.of(new RevisionId("fedcba9876543210")),
+                new Author("Alice", "alice@configflow.dev"),
+                NOW,
+                "feat: add a thing",
+                List.of(new RefLabel(RefLabel.Kind.BRANCH, "main")));
+        when(repositoryService.history(any(), any()))
+                .thenReturn(new Page<>(List.of(revision), "cursor-2"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value("0123456789abcdef"))
+                .andExpect(jsonPath("$.items[0].parents[0]").value("fedcba9876543210"))
+                .andExpect(jsonPath("$.items[0].author.name").value("Alice"))
+                .andExpect(jsonPath("$.items[0].message").value("feat: add a thing"))
+                .andExpect(jsonPath("$.items[0].labels[0].kind").value("BRANCH"))
+                .andExpect(jsonPath("$.nextCursor").value("cursor-2"));
+    }
+
+    @Test
+    void history_unparseableTimestampIs400() throws Exception {
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/history")
+                        .param("from", "yesterday"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(repositoryService, never()).history(any(), any());
+    }
+
+    @Test
+    void history_nonNumericLimitIs400() throws Exception {
+        // Spring fails to bind before our code runs; without a handler this is a 500.
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/history")
+                        .param("limit", "many"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void register_malformedJsonBodyIs400() throws Exception {
+        mvc.perform(post("/api/v1/repositories")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"localPath\":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void show_returnsTheRevision() throws Exception {
+        when(repositoryService.show(any(), any())).thenReturn(new Revision(
+                new RevisionId("0123456789abcdef"),
+                List.of(),
+                new Author("Alice", null),
+                NOW,
+                "only commit",
+                List.of()));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/HEAD"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("0123456789abcdef"))
+                .andExpect(jsonPath("$.author.email").doesNotExist());
+
+        verify(repositoryService).show(any(), eq(new RevisionId("HEAD")));
+    }
+
+    @Test
+    void show_unknownRevisionIs404() throws Exception {
+        when(repositoryService.show(any(), any()))
+                .thenThrow(new NoSuchElementException("Revision not found"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/deadbeef"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 
     @Test

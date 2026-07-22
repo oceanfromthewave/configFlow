@@ -2,6 +2,7 @@ package dev.configflow.application.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
+import dev.configflow.domain.vcs.model.Author;
 import dev.configflow.domain.vcs.model.ChangeType;
 import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.FileChange;
@@ -173,6 +175,47 @@ class RepositoryServiceTest {
     }
 
     @Test
+    void history_passesTheQueryThroughAndReturnsThePage() {
+        RepositoryId id = service.register(repoDir).id();
+        HistoryQuery query = new HistoryQuery(null, 10, "main", "alice", "fix", null, null, null);
+
+        Page<Revision> page = service.history(id, query);
+
+        assertSame(query, provider.lastQuery);
+        assertEquals(1, page.items().size());
+        assertEquals("next-cursor", page.nextCursor());
+    }
+
+    @Test
+    void history_rejectsAPageLargerThanTheCap() {
+        RepositoryId id = service.register(repoDir).id();
+        HistoryQuery tooBig = HistoryQuery.firstPage(RepositoryService.MAX_HISTORY_LIMIT + 1);
+
+        assertThrows(IllegalArgumentException.class, () -> service.history(id, tooBig));
+        assertNull(provider.lastQuery, "the request must not reach the provider");
+    }
+
+    @Test
+    void history_allowsExactlyTheCap() {
+        RepositoryId id = service.register(repoDir).id();
+
+        service.history(id, HistoryQuery.firstPage(RepositoryService.MAX_HISTORY_LIMIT));
+
+        assertEquals(RepositoryService.MAX_HISTORY_LIMIT, provider.lastQuery.limit());
+    }
+
+    @Test
+    void show_delegatesToTheProvider() {
+        RepositoryId id = service.register(repoDir).id();
+        RevisionId wanted = new RevisionId("HEAD");
+
+        Revision revision = service.show(id, wanted);
+
+        assertEquals(wanted, provider.lastShown);
+        assertEquals("only commit", revision.message());
+    }
+
+    @Test
     void commit_rejectsProvidersWithoutCommitOperations() {
         BareProvider bare = new BareProvider();
         provider.detects = false;
@@ -223,6 +266,13 @@ class RepositoryServiceTest {
             implements VcsProvider, WorkingTreeOperations, CommitOperations {
 
         static final RevisionId CREATED = new RevisionId("0123456789abcdef");
+        static final Revision REVISION = new Revision(
+                CREATED,
+                List.of(),
+                new Author("Test", "test@configflow.dev"),
+                NOW,
+                "only commit",
+                List.of());
 
         boolean detects = true;
         WorkingTreeStatus status = WorkingTreeStatus.clean();
@@ -230,6 +280,8 @@ class RepositoryServiceTest {
         final List<Path> staged = new ArrayList<>();
         final List<Path> unstaged = new ArrayList<>();
         CommitRequest lastCommit;
+        HistoryQuery lastQuery;
+        RevisionId lastShown;
 
         @Override
         public VcsType type() {
@@ -282,12 +334,14 @@ class RepositoryServiceTest {
 
         @Override
         public Page<Revision> history(RepositoryHandle repo, HistoryQuery query) {
-            throw new UnsupportedOperationException("not needed by these tests");
+            lastQuery = query;
+            return new Page<>(List.of(REVISION), "next-cursor");
         }
 
         @Override
         public Revision show(RepositoryHandle repo, RevisionId id) {
-            throw new UnsupportedOperationException("not needed by these tests");
+            lastShown = id;
+            return REVISION;
         }
     }
 

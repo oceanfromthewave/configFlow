@@ -1,6 +1,13 @@
-import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
+import {
+    useInfiniteQuery,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from '@tanstack/react-query'
 
 import type {
+    HistoryFilters,
+    HistoryPage,
     RepositorySummary,
     WorkingTreeStatus,
 } from '@/entities/repository/model/types'
@@ -47,6 +54,45 @@ export function useWorkingTreeStatus(repositoryId: string | null) {
         queryKey: queryKeys.status(repositoryId ?? 'none'),
         queryFn: () =>
             apiFetch<WorkingTreeStatus>(`/repositories/${repositoryId}/status`),
+        enabled: repositoryId != null,
+    })
+}
+
+/** How many revisions one page holds; the server caps this at 200. */
+export const HISTORY_PAGE_SIZE = 50
+
+/** Drops empty filters so a blank search box does not narrow the query. */
+function historySearchParams(filters: HistoryFilters, cursor?: string) {
+    const params = new URLSearchParams({limit: String(HISTORY_PAGE_SIZE)})
+    if (cursor) {
+        params.set('cursor', cursor)
+    }
+    for (const [key, value] of Object.entries(filters)) {
+        if (value != null && value.trim() !== '') {
+            params.set(key, value.trim())
+        }
+    }
+    return params
+}
+
+/**
+ * History, newest first, one cursor page at a time.
+ *
+ * History is unbounded, so it is never fetched whole: the server returns the id
+ * of the first revision that did not fit and the next page resumes there.
+ */
+export function useHistory(
+    repositoryId: string | null,
+    filters: HistoryFilters = {},
+) {
+    return useInfiniteQuery({
+        queryKey: [...queryKeys.history(repositoryId ?? 'none'), filters],
+        queryFn: ({pageParam}) =>
+            apiFetch<HistoryPage>(
+                `/repositories/${repositoryId}/history?${historySearchParams(filters, pageParam)}`,
+            ),
+        initialPageParam: undefined as string | undefined,
+        getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
         enabled: repositoryId != null,
     })
 }
