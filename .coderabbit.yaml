@@ -13,11 +13,11 @@ reviews:
   review_status: false            # PR마다 "리뷰 상태" 코멘트를 남기지 않아 노이즈 감소
   auto_review:
     enabled: true
-    # 브랜치를 잘게 쪼개 올리고 있어서 PR 하나에 리뷰가 길게 쌓이지 않는다.
-    # 오히려 수동 트리거 왕복이 병목이라 증분 리뷰를 켠다.
-    auto_incremental_review: true
-    # Draft 동안엔 리뷰하지 않는다. Ready로 표시하면 리뷰가 시작되고,
-    # 그 뒤 푸시마다 증분 리뷰가 이어진다(위 auto_incremental_review).
+    # 푸시마다 리뷰가 도는 건 무료 플랜 할당량을 빠르게 태운다. PR #10에서 실제로
+    # 한도에 걸려 리뷰가 한 시간 가까이 멈췄다. 첫 리뷰만 자동으로 받고, 지적을
+    # 고친 뒤에는 `@coderabbitai review`로 직접 트리거한다.
+    auto_incremental_review: false
+    # Draft 동안엔 리뷰하지 않는다. Ready로 표시할 때 첫 리뷰가 시작된다.
     drafts: false
     base_branches:
       - main
