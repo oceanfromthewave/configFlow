@@ -1,6 +1,7 @@
 import { useT } from '@/shared/i18n'
 import { useUiStore, type BottomPanelTab } from '@/shared/lib/uiStore'
 import { IconButton, Tabs } from '@/shared/ui'
+import { OperationsPanel } from '@/widgets/OperationsPanel'
 
 /** Always-visible header row: tabs + collapse/expand toggle. */
 export function BottomPanelHeader() {
@@ -61,7 +62,11 @@ export function BottomPanel() {
         role="tabpanel"
         className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs text-muted"
       >
-        {t(emptyMessageKey[activeTab])}
+        {activeTab === 'operations' ? (
+          <OperationsPanel />
+        ) : (
+          t(emptyMessageKey[activeTab])
+        )}
       </div>
     </div>
   )

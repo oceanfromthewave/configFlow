@@ -5,6 +5,7 @@ import {
     useQueryClient,
 } from '@tanstack/react-query'
 
+import type {AcceptedOperation} from '@/entities/operation/model/types'
 import type {
     FileDiff,
     HistoryFilters,
@@ -14,6 +15,31 @@ import type {
     WorkingTreeStatus,
 } from '@/entities/repository/model/types'
 import {apiFetch, queryKeys} from '@/shared/api'
+
+interface CheckoutPayload {
+    repositoryId: string
+    ref: string
+}
+
+/**
+ * Switches the working tree to another ref.
+ *
+ * Answers as soon as the work is queued, not when it finishes: the refreshed
+ * refs and file list arrive later through `operation.completed` on the SSE
+ * stream, which the bridge turns into cache invalidation.
+ */
+export function useCheckout() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, ref}: CheckoutPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/checkout`, {
+                method: 'POST',
+                body: {ref},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
 
 /** Registered repositories, most recently opened first. */
 export function useRepositories() {

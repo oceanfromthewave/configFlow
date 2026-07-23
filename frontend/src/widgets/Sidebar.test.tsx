@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/shared/i18n'
@@ -19,18 +20,42 @@ function renderSidebar() {
   )
 }
 
-function stubRefs(refs: unknown, status = 200) {
+interface RecordedCall {
+  url: string
+  body: unknown
+}
+
+/** Answers GET /refs and records every checkout POST. */
+function stubRefs(refs: unknown, status = 200, postStatus = 202) {
+  const calls: RecordedCall[] = []
   vi.stubGlobal(
     'fetch',
-    vi.fn(() =>
-      Promise.resolve(
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        calls.push({
+          url: String(input),
+          body: init.body ? JSON.parse(String(init.body)) : null,
+        })
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              postStatus === 202
+                ? { operationId: 'op-1', type: 'CHECKOUT', state: 'QUEUED' }
+                : { code: 'CONFLICT' },
+            ),
+            { status: postStatus, headers: { 'content-type': 'application/json' } },
+          ),
+        )
+      }
+      return Promise.resolve(
         new Response(JSON.stringify(status === 200 ? { refs } : refs), {
           status,
           headers: { 'content-type': 'application/json' },
         }),
-      ),
-    ),
+      )
+    }),
   )
+  return calls
 }
 
 /** The section list that follows the heading with the given text. */
@@ -112,6 +137,76 @@ describe('Sidebar', () => {
 
     expect(screen.getAllByText('저장소를 열면 브랜치가 표시됩니다')).toHaveLength(3)
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('checks out a branch when its row is clicked', async () => {
+    const calls = stubRefs([
+      { kind: 'HEAD', name: 'main' },
+      { kind: 'BRANCH', name: 'main' },
+      { kind: 'BRANCH', name: 'feature/x' },
+    ])
+
+    renderSidebar()
+    await userEvent.click(
+      await screen.findByRole('button', { name: '체크아웃: feature/x' }),
+    )
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].url).toContain('/repositories/repo-1/checkout')
+    expect(calls[0].body).toEqual({ ref: 'feature/x' })
+  })
+
+  it('does not offer to check out the branch already in use', async () => {
+    stubRefs([
+      { kind: 'HEAD', name: 'main' },
+      { kind: 'BRANCH', name: 'main' },
+    ])
+
+    renderSidebar()
+    await screen.findByText('main')
+
+    expect(
+      screen.queryByRole('button', { name: '체크아웃: main' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('does not offer checkout for remote branches or tags', async () => {
+    stubRefs([
+      { kind: 'HEAD', name: 'main' },
+      { kind: 'BRANCH', name: 'main' },
+      { kind: 'REMOTE_BRANCH', name: 'origin/main' },
+      { kind: 'TAG', name: 'v1.0' },
+    ])
+
+    renderSidebar()
+    await screen.findByText('origin/main')
+
+    // Checking out either detaches the head, which needs its own confirmation.
+    expect(
+      screen.queryByRole('button', { name: '체크아웃: origin/main' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '체크아웃: v1.0' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('reports a blocked checkout with a translated message', async () => {
+    stubRefs(
+      [
+        { kind: 'HEAD', name: 'main' },
+        { kind: 'BRANCH', name: 'main' },
+        { kind: 'BRANCH', name: 'feature/x' },
+      ],
+      200,
+      409,
+    )
+
+    renderSidebar()
+    await userEvent.click(
+      await screen.findByRole('button', { name: '체크아웃: feature/x' }),
+    )
+
+    expect(await screen.findByText(/체크아웃하지 못했습니다/)).toBeInTheDocument()
   })
 
   it('reports a failure without hiding the workspace links', async () => {
