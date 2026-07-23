@@ -41,7 +41,8 @@ function typeKey(type: OperationType): MessageKey {
 function OperationRow({ operation }: { operation: Operation }) {
   const t = useT()
   const cancel = useCancelOperation()
-  const running = !isTerminal(operation.state)
+  // Queued counts too — it has not started, so it is the easiest thing to stop.
+  const cancellable = !isTerminal(operation.state)
   const percent = operation.progress?.percent ?? null
 
   return (
@@ -62,7 +63,7 @@ function OperationRow({ operation }: { operation: Operation }) {
         {percent != null ? (
           <span className="shrink-0 font-mono text-[11px] text-muted">{percent}%</span>
         ) : null}
-        {running ? (
+        {cancellable ? (
           <Button
             size="sm"
             variant="ghost"

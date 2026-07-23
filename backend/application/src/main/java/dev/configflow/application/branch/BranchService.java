@@ -78,7 +78,8 @@ public final class BranchService {
         VcsAccess.Opened<BranchOperations> opened = access.open(id, BranchOperations.class);
 
         return queue.submit(id, OperationType.BRANCH_DELETE, context -> {
-            context.log("branch -d " + branchName, ConsoleLevel.CMD);
+            // -D is the destructive one; the console should not claim otherwise.
+            context.log("branch " + (force ? "-D " : "-d ") + branchName, ConsoleLevel.CMD);
             context.throwIfCancelled();
             opened.operations().deleteBranch(opened.handle(), branchName, remote, force);
             events.refsChanged(id);

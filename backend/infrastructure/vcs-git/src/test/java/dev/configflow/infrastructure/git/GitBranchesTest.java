@@ -190,6 +190,14 @@ class GitBranchesTest {
     }
 
     @Test
+    void deleteBranch_unknownBranchIsNotFound() {
+        // JGit answers with an empty list rather than failing, so a typo would otherwise
+        // be reported to the user as a successful deletion.
+        assertThrows(NoSuchElementException.class,
+                () -> branches.deleteBranch(handle, "no-such-branch", false, false));
+    }
+
+    @Test
     void deleteBranch_refusesTheCheckedOutBranch() {
         assertThrows(VcsPreconditionException.class,
                 () -> branches.deleteBranch(handle, mainBranch, false, false));
@@ -243,7 +251,9 @@ class GitBranchesTest {
         branches.checkout(handle, mainBranch);
         commitFile("main.txt", "main\n");
 
-        assertThrows(dev.configflow.domain.vcs.exception.VcsException.class,
+        // Not a server fault: the caller asked for fast-forward against a diverged
+        // history, and can retry with a real merge.
+        assertThrows(VcsPreconditionException.class,
                 () -> branches.merge(handle, new MergeRequest("feature/x", true, false)));
     }
 

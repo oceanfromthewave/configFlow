@@ -86,7 +86,13 @@ final class GitBranches {
         try (Git git = access.open(repo)) {
             // JGit deletes by full ref name for remotes; locals accept the short form.
             String target = remote ? Constants.R_REMOTES + name : name;
-            git.branchDelete().setBranchNames(target).setForce(force).call();
+            List<String> deleted =
+                    git.branchDelete().setBranchNames(target).setForce(force).call();
+            if (deleted.isEmpty()) {
+                // JGit reports "deleted nothing" by returning an empty list rather than
+                // failing, so without this a typo would be reported as a success.
+                throw new NoSuchElementException("Branch not found: " + name);
+            }
         } catch (NotMergedException e) {
             // Refusing here is the point: without force this would discard commits.
             throw new VcsPreconditionException(
@@ -113,13 +119,22 @@ final class GitBranches {
             }
             MergeResult result = merge.call();
 
-            if (result.getMergeStatus() == MergeResult.MergeStatus.CONFLICTING) {
+            MergeResult.MergeStatus status = result.getMergeStatus();
+            if (status == MergeResult.MergeStatus.CONFLICTING) {
                 // The working tree is left conflicted on purpose: the user resolves it.
                 throw new MergeConflictException(conflictedPaths(result));
             }
-            if (!result.getMergeStatus().isSuccessful()) {
+            if (status == MergeResult.MergeStatus.ABORTED
+                    || status == MergeResult.MergeStatus.FAILED) {
+                // Nothing went wrong on our side — the history simply cannot be merged
+                // the way it was asked for, typically fast-forward-only against a branch
+                // that has diverged. The user picks a different mode or rebases first.
+                throw new VcsPreconditionException(
+                        "Cannot merge " + request.source() + ": " + status);
+            }
+            if (!status.isSuccessful()) {
                 throw new VcsException(
-                        "Merge of " + request.source() + " failed: " + result.getMergeStatus());
+                        "Merge of " + request.source() + " failed: " + status);
             }
         } catch (RevisionSyntaxException | AmbiguousObjectException e) {
             throw new IllegalArgumentException("Not a valid ref: " + request.source(), e);

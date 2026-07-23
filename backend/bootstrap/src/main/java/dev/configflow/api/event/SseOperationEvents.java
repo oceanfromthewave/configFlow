@@ -64,12 +64,25 @@ public class SseOperationEvents implements OperationEvents {
 
     @Override
     public void refsChanged(RepositoryId repositoryId) {
-        send("repository.refs-changed", Map.of("repositoryId", repositoryId.asString()));
+        sendRepositoryEvent("repository.refs-changed", repositoryId);
     }
 
     @Override
     public void workingTreeChanged(RepositoryId repositoryId) {
-        send("workingtree.changed", Map.of("repositoryId", repositoryId.asString()));
+        sendRepositoryEvent("workingtree.changed", repositoryId);
+    }
+
+    /**
+     * Both events exist to invalidate one repository's caches, so without an id there is
+     * nothing for a client to act on. Dropping it beats an NPE: the port promises these
+     * never throw, and work with no repository — a clone into a new directory — is
+     * exactly the case that passes null.
+     */
+    private void sendRepositoryEvent(String eventName, RepositoryId repositoryId) {
+        if (repositoryId == null) {
+            return;
+        }
+        send(eventName, Map.of("repositoryId", repositoryId.asString()));
     }
 
     /** Null unless the operation actually failed, which is what the contract promises. */
