@@ -72,6 +72,11 @@ public class SseOperationEvents implements OperationEvents {
         sendRepositoryEvent("workingtree.changed", repositoryId);
     }
 
+    @Override
+    public void repositoryRegistered(RepositoryId repositoryId) {
+        sendRepositoryEvent("repository.registered", repositoryId);
+    }
+
     /**
      * Both events exist to invalidate one repository's caches, so without an id there is
      * nothing for a client to act on. Dropping it beats an NPE: the port promises these

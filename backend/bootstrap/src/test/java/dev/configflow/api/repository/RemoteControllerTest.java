@@ -4,12 +4,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
 import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationType;
@@ -18,6 +20,7 @@ import dev.configflow.domain.vcs.exception.VcsAuthenticationRequiredException;
 import dev.configflow.domain.vcs.exception.VcsNetworkException;
 import dev.configflow.domain.vcs.exception.VcsPreconditionException;
 import dev.configflow.domain.vcs.model.PullRequest;
+import java.nio.file.Path;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -35,6 +38,9 @@ class RemoteControllerTest {
 
     @MockitoBean
     private RemoteService remoteService;
+
+    @MockitoBean
+    private CloneService cloneService;
 
     private static Operation queued(OperationType type) {
         return Operation.queued(RepositoryId.newId(), type);
@@ -184,5 +190,43 @@ class RemoteControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("CAPABILITY_NOT_SUPPORTED"));
+    }
+
+    @Test
+    void clone_answers202AndForwardsTheTarget() throws Exception {
+        when(cloneService.clone(any(), any(), any(), any()))
+                .thenReturn(Operation.queued(null, OperationType.CLONE));
+
+        mvc.perform(post("/api/v1/repositories/clone")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\":\"https://host/o/r.git\",\"localPath\":\"C:/dev/r\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.type").value("CLONE"))
+                .andExpect(jsonPath("$.state").value("QUEUED"));
+
+        verify(cloneService).clone(
+                eq("https://host/o/r.git"), eq(Path.of("C:/dev/r")), isNull(), isNull());
+    }
+
+    @Test
+    void clone_withoutABodyIs400() throws Exception {
+        mvc.perform(post("/api/v1/repositories/clone")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(cloneService, never()).clone(any(), any(), any(), any());
+    }
+
+    @Test
+    void clone_intoAnOccupiedDirectoryIs400() throws Exception {
+        when(cloneService.clone(any(), any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("The target directory is not empty"));
+
+        mvc.perform(post("/api/v1/repositories/clone")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\":\"https://host/o/r.git\",\"localPath\":\"C:/dev/r\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 }

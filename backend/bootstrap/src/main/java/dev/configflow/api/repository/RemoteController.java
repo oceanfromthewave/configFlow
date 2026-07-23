@@ -1,11 +1,14 @@
 package dev.configflow.api.repository;
 
+import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
 import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.vcs.model.PullRequest;
+import dev.configflow.domain.vcs.model.VcsType;
+import java.nio.file.Path;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,10 +46,37 @@ public class RemoteController {
     public record PushBody(String remote, Boolean forceWithLease, Boolean tags) {
     }
 
-    private final RemoteService remoteService;
+    /** POST body for clone. {@code vcsType} defaults to Git. */
+    public record CloneBody(String url, String localPath, VcsType vcsType, String credentialId) {
+    }
 
-    public RemoteController(RemoteService remoteService) {
+    private final RemoteService remoteService;
+    private final CloneService cloneService;
+
+    public RemoteController(RemoteService remoteService, CloneService cloneService) {
         this.remoteService = remoteService;
+        this.cloneService = cloneService;
+    }
+
+    /**
+     * Clones into a new directory and registers the result.
+     *
+     * <p>Not nested under a repository id, because the point is that there isn't one
+     * yet.</p>
+     */
+    @PostMapping("/clone")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AcceptedResponse cloneRepository(@RequestBody(required = false) CloneBody body) {
+        if (body == null) {
+            throw new IllegalArgumentException("Request body must contain 'url' and 'localPath'");
+        }
+        return AcceptedResponse.from(cloneService.clone(
+                body.url(),
+                body.localPath() == null || body.localPath().isBlank()
+                        ? null
+                        : Path.of(body.localPath().trim()),
+                body.vcsType(),
+                body.credentialId()));
     }
 
     @PostMapping("/{id}/fetch")

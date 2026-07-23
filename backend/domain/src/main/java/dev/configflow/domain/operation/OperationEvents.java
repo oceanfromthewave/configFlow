@@ -26,6 +26,15 @@ public interface OperationEvents {
     /** Refs of the repository changed, so any cached ref list is stale. */
     void refsChanged(RepositoryId repositoryId);
 
+    /**
+     * A repository joined the workspace, so any cached list of them is short by one.
+     *
+     * <p>Separate from {@link #refsChanged} because the thing that went stale is the list
+     * itself, not anything inside one repository — and a clone finishes long after the
+     * request that started it returned.</p>
+     */
+    void repositoryRegistered(RepositoryId repositoryId);
+
     /** The working tree of the repository changed. */
     void workingTreeChanged(RepositoryId repositoryId);
 
@@ -47,6 +56,10 @@ public interface OperationEvents {
 
             @Override
             public void refsChanged(RepositoryId repositoryId) {
+            }
+
+            @Override
+            public void repositoryRegistered(RepositoryId repositoryId) {
             }
 
             @Override

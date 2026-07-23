@@ -56,6 +56,47 @@ export function usePush() {
     return useRemoteCommand<{forceWithLease?: boolean; tags?: boolean}>('push')
 }
 
+export interface ClonePayload {
+    url: string
+    localPath: string
+    vcsType?: 'GIT' | 'SVN'
+}
+
+/**
+ * Clones into a new directory and registers the result.
+ *
+ * The repository list refreshes from `repository.registered`, not from here:
+ * this call returns as soon as the clone is queued, which is long before there
+ * is anything to list.
+ */
+export function useClone() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: (payload: ClonePayload) =>
+            apiFetch<AcceptedOperation>('/repositories/clone', {
+                method: 'POST',
+                body: payload,
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/**
+ * Guesses the directory name Git would use for a clone URL.
+ *
+ * Handles both `https://host/owner/repo.git` and `git@host:owner/repo.git`,
+ * and returns null when there is nothing sensible to derive.
+ */
+export function repositoryNameFromUrl(url: string): string | null {
+    const trimmed = url.trim().replace(/\/+$/, '')
+    if (trimmed === '') return null
+    const lastSegment = trimmed.split(/[/:]/).pop()
+    if (!lastSegment) return null
+    const name = lastSegment.replace(/\.git$/i, '')
+    return name === '' ? null : name
+}
+
 /**
  * Switches the working tree to another ref.
  *

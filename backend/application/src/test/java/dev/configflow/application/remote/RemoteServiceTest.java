@@ -401,6 +401,10 @@ class RemoteServiceTest {
         public void workingTreeChanged(RepositoryId repositoryId) {
             workingTreeChanged.add(repositoryId);
         }
+
+        @Override
+        public void repositoryRegistered(RepositoryId repositoryId) {
+        }
     }
 
     private static final class InMemoryHistory implements OperationHistoryStore {
