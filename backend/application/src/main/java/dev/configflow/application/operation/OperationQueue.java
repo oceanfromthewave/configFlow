@@ -66,6 +66,9 @@ public final class OperationQueue {
     /** Tail of each repository's chain. Bounded by the number of registered repositories. */
     private final Map<String, CompletableFuture<Void>> tails = new ConcurrentHashMap<>();
 
+    /** Guards admission against shutdown; held only for map work, never while a task runs. */
+    private final Object lifecycle = new Object();
+
     private volatile boolean accepting = true;
 
     public OperationQueue(
@@ -88,23 +91,32 @@ public final class OperationQueue {
     public Operation submit(RepositoryId repositoryId, OperationType type, OperationTask task) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(task, "task");
-        if (!accepting) {
-            throw new IllegalStateException("The operation queue is shutting down");
-        }
-
         LiveOperation operation = new LiveOperation(OperationId.newId(), repositoryId, type);
-        live.put(operation.id, operation);
 
-        // A clone has no repository to serialise against, so those run on their own chain.
-        String chainKey = repositoryId == null ? "" : repositoryId.asString();
-        tails.compute(chainKey, (key, tail) -> {
-            CompletableFuture<Void> previous =
-                    tail == null ? CompletableFuture.completedFuture(null) : tail;
-            return previous
-                    // Absorb the previous outcome: a failure must not cancel the queue.
-                    .handle((ignoredResult, ignoredError) -> null)
-                    .thenRunAsync(() -> execute(operation, task), executor);
-        });
+        // Admission and shutdown share this lock. Without it shutdown could snapshot the
+        // chains between the accepting check and the linkage below, leaving an accepted
+        // operation outside the wait and stuck at QUEUED.
+        synchronized (lifecycle) {
+            if (!accepting) {
+                throw new IllegalStateException("The operation queue is shutting down");
+            }
+            live.put(operation.id, operation);
+
+            // Work with no repository — a clone into a new directory — has nothing to
+            // serialise against, so each gets its own chain rather than queueing behind
+            // unrelated clones.
+            String chainKey = repositoryId == null
+                    ? "clone:" + operation.id.asString()
+                    : repositoryId.asString();
+            tails.compute(chainKey, (key, tail) -> {
+                CompletableFuture<Void> previous =
+                        tail == null ? CompletableFuture.completedFuture(null) : tail;
+                return previous
+                        // Absorb the previous outcome: a failure must not cancel the queue.
+                        .handle((ignoredResult, ignoredError) -> null)
+                        .thenRunAsync(() -> execute(operation, task), executor);
+            });
+        }
 
         return operation.snapshot();
     }
@@ -138,9 +150,12 @@ public final class OperationQueue {
      * @param grace how long to wait for outstanding work before giving up on it
      */
     public void shutdown(Duration grace) {
-        accepting = false;
+        CompletableFuture<?>[] outstanding;
+        synchronized (lifecycle) {
+            accepting = false;
+            outstanding = tails.values().toArray(CompletableFuture[]::new);
+        }
 
-        CompletableFuture<?>[] outstanding = tails.values().toArray(CompletableFuture[]::new);
         try {
             CompletableFuture.allOf(outstanding).get(grace.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -151,10 +166,11 @@ public final class OperationQueue {
         }
 
         for (LiveOperation operation : live.values()) {
-            if (!operation.state.isTerminal()) {
-                terminate(operation, OperationState.CANCELLED,
-                        "The application shut down before this operation finished");
-            }
+            // Ask first: a task still running past the grace period may yet stop on its
+            // own, and terminate() below only wins if it has not finished already.
+            operation.cancelRequested.set(true);
+            terminate(operation, OperationState.CANCELLED,
+                    "The application shut down before this operation finished");
         }
     }
 
@@ -191,6 +207,11 @@ public final class OperationQueue {
     // --- execution -------------------------------------------------------
 
     private void execute(LiveOperation operation, OperationTask task) {
+        if (operation.isSettled()) {
+            // Shutdown already recorded an outcome for this one while it waited. Running
+            // it now would touch the repository after the app said it was done.
+            return;
+        }
         if (operation.cancelRequested.get()) {
             // Cancelled while still waiting its turn: it must never touch the repository.
             terminate(operation, OperationState.CANCELLED, null);
@@ -224,6 +245,12 @@ public final class OperationQueue {
     }
 
     private void terminate(LiveOperation operation, OperationState state, String errorMessage) {
+        if (!operation.settle()) {
+            // Someone got here first. Shutdown and a task finishing late both end up
+            // calling this, and the second one must not overwrite the recorded outcome or
+            // emit a duplicate completion.
+            return;
+        }
         operation.state = state;
         operation.finishedAt = clock.instant();
         operation.errorMessage = errorMessage;
@@ -298,6 +325,9 @@ public final class OperationQueue {
         private final List<String> logLines = Collections.synchronizedList(new ArrayList<>());
         private final AtomicBoolean cancelRequested = new AtomicBoolean();
 
+        /** Claimed by whoever records the terminal state, so only the first one counts. */
+        private final AtomicBoolean settled = new AtomicBoolean();
+
         private volatile OperationState state = OperationState.QUEUED;
         private volatile OperationProgress progress;
         private volatile Instant startedAt;
@@ -308,6 +338,15 @@ public final class OperationQueue {
             this.id = id;
             this.repositoryId = repositoryId;
             this.type = type;
+        }
+
+        /** True for exactly one caller: the one allowed to record the terminal state. */
+        boolean settle() {
+            return settled.compareAndSet(false, true);
+        }
+
+        boolean isSettled() {
+            return settled.get();
         }
 
         void addLogLine(String line) {

@@ -341,9 +341,9 @@ class OperationQueueTest {
     @Test
     void shutdownCompletesWorkTheExecutorNeverSaw() throws Exception {
         ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch blocker = new CountDownLatch(1);
         try {
             OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
-            CountDownLatch blocker = new CountDownLatch(1);
             CountDownLatch started = new CountDownLatch(1);
 
             queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
@@ -357,15 +357,70 @@ class OperationQueueTest {
             assertEquals(OperationState.QUEUED, queue.find(waiting.id()).orElseThrow().state());
 
             queue.shutdown(Duration.ofMillis(200));
-            blocker.countDown();
 
             // Left at QUEUED it would never emit a completion, and a client watching it
             // would wait for an event that can no longer arrive.
             Operation finished = queue.find(waiting.id()).orElseThrow();
-            assertTrue(finished.state().isTerminal(), () -> "still " + finished.state());
             assertEquals(OperationState.CANCELLED, finished.state());
             assertTrue(events.completed.stream()
                     .anyMatch(operation -> operation.id().equals(waiting.id())));
+        } finally {
+            blocker.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void workReleasedAfterTheGracePeriodCannotOverwriteItsShutdownOutcome() throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch blocker = new CountDownLatch(1);
+            CountDownLatch started = new CountDownLatch(1);
+            CountDownLatch taskReturned = new CountDownLatch(1);
+
+            Operation slow = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+                started.countDown();
+                blocker.await();
+                taskReturned.countDown();
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+
+            // Grace expires while the task is still stuck, so shutdown records CANCELLED.
+            queue.shutdown(Duration.ofMillis(100));
+            assertEquals(OperationState.CANCELLED, queue.find(slow.id()).orElseThrow().state());
+
+            // Now let it finish. Its own terminate() must not rewrite the outcome or
+            // announce a second completion for the same operation.
+            blocker.countDown();
+            assertTrue(taskReturned.await(5, TimeUnit.SECONDS));
+            Thread.sleep(100);
+
+            assertEquals(OperationState.CANCELLED, queue.find(slow.id()).orElseThrow().state());
+            assertEquals(1, events.completed.stream()
+                    .filter(operation -> operation.id().equals(slow.id())).count());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void repositorylessWorkDoesNotQueueBehindUnrelatedRepositorylessWork() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch bothStarted = new CountDownLatch(2);
+
+            // Two clones into different directories share nothing, so a single chain for
+            // "no repository" would make the second wait on the first for no reason.
+            OperationTask waitForTheOther = context -> {
+                bothStarted.countDown();
+                assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
+            };
+            queue.submit(null, OperationType.CLONE, waitForTheOther);
+            queue.submit(null, OperationType.CLONE, waitForTheOther);
+
+            assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
         } finally {
             pool.shutdownNow();
         }
