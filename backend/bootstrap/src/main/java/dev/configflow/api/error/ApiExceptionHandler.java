@@ -1,8 +1,11 @@
 package dev.configflow.api.error;
 
 import dev.configflow.domain.vcs.exception.MergeConflictException;
+import dev.configflow.domain.vcs.exception.VcsAuthenticationRequiredException;
+import dev.configflow.domain.vcs.exception.VcsNetworkException;
 import dev.configflow.domain.vcs.exception.VcsPreconditionException;
 import java.net.URI;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.slf4j.Logger;
@@ -71,6 +74,26 @@ public class ApiExceptionHandler
 		ProblemDetail problem = problem(HttpStatus.CONFLICT, "merge-conflict", "MERGE_CONFLICT", "Merge stopped due to conflicts", e.getMessage());
 		problem.setProperty("conflictedPaths", e.conflictedPaths().stream().map(path -> path.toString().replace('\\', '/')).toList());
 		return problem;
+	}
+
+	/**
+	 * Credentials are missing or were rejected. 401 rather than 403 because the answer is
+	 * "identify yourself again", and the host/protocol travel along so the frontend can
+	 * ask for the right ones instead of a generic prompt.
+	 */
+	@ExceptionHandler(VcsAuthenticationRequiredException.class)
+	public ProblemDetail handleAuthRequired(VcsAuthenticationRequiredException e)
+	{
+		ProblemDetail problem = problem(HttpStatus.UNAUTHORIZED, "vcs-auth-required", "VCS_AUTH_REQUIRED", "Authentication required", e.getMessage());
+		problem.setProperty("context", Map.of("host", e.host(), "protocol", e.protocol()));
+		return problem;
+	}
+
+	/** The remote could not be reached. Ours is the proxy here, so 502 rather than 500. */
+	@ExceptionHandler(VcsNetworkException.class)
+	public ProblemDetail handleNetwork(VcsNetworkException e)
+	{
+		return problem(HttpStatus.BAD_GATEWAY, "vcs-network", "VCS_NETWORK_ERROR", "Could not reach the remote", e.getMessage());
 	}
 
 	@ExceptionHandler(Exception.class)

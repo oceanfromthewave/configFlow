@@ -2,6 +2,7 @@ package dev.configflow.config;
 
 import dev.configflow.application.branch.BranchService;
 import dev.configflow.application.operation.OperationQueue;
+import dev.configflow.application.remote.RemoteService;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.OperationEvents;
 import dev.configflow.domain.operation.OperationHistoryStore;
@@ -95,5 +96,11 @@ public class OperationConfig {
     public BranchService branchService(
             VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events) {
         return new BranchService(vcsAccess, operationQueue, events);
+    }
+
+    @Bean
+    public RemoteService remoteService(
+            VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events) {
+        return new RemoteService(vcsAccess, operationQueue, events);
     }
 }
