@@ -3,6 +3,9 @@ package dev.configflow.infrastructure.git;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
 import dev.configflow.domain.vcs.port.BranchOperations;
+import dev.configflow.domain.vcs.port.OperationMonitor;
+import dev.configflow.domain.vcs.port.RemoteSyncOperations;
+import dev.configflow.domain.vcs.port.RepositoryOperations;
 import dev.configflow.domain.vcs.port.CommitOperations;
 import dev.configflow.domain.vcs.port.DiffOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
@@ -23,7 +26,7 @@ import org.eclipse.jgit.util.FS;
  * checking {@link #capabilities()} and narrowing with {@code instanceof}.</p>
  */
 public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations,
-		BranchOperations
+		BranchOperations, RemoteSyncOperations, RepositoryOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -35,6 +38,7 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 
 	private final GitRefs refs;
 	private final GitBranches branches;
+	private final GitRemotes remotes;
 
 	public GitVcsProvider()
 	{
@@ -43,16 +47,17 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
-		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access));
+		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access));
 	}
 
-	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches)
+	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
 		this.diffs = diffs;
 		this.refs = refs;
 		this.branches = branches;
+		this.remotes = remotes;
 	}
 
 	@Override
@@ -188,5 +193,49 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 	public void merge(RepositoryHandle repo, MergeRequest request)
 	{
 		branches.merge(repo, request);
+	}
+
+	@Override
+	public void fetch(RepositoryHandle repo, FetchRequest request, OperationMonitor monitor)
+	{
+		remotes.fetch(repo, request, monitor);
+	}
+
+	@Override
+	public void pull(RepositoryHandle repo, PullRequest request, OperationMonitor monitor)
+	{
+		remotes.pull(repo, request, monitor);
+	}
+
+	@Override
+	public void push(RepositoryHandle repo, PushRequest request, OperationMonitor monitor)
+	{
+		remotes.push(repo, request, monitor);
+	}
+
+	/** SVN-only; Git has no equivalent of a working-copy update against a revision. */
+	@Override
+	public void update(RepositoryHandle repo, Long revision, OperationMonitor monitor)
+	{
+		throw new UnsupportedOperationException("Git has no SVN-style update; use pull");
+	}
+
+	/** SVN-only; a Git working copy has no lock database to clean up. */
+	@Override
+	public void cleanup(RepositoryHandle repo)
+	{
+		throw new UnsupportedOperationException("Git has no SVN-style cleanup");
+	}
+
+	@Override
+	public RepositoryHandle cloneRepository(CloneRequest request, OperationMonitor monitor)
+	{
+		return remotes.cloneRepository(request, monitor);
+	}
+
+	@Override
+	public RepositoryHandle init(Path path)
+	{
+		return remotes.init(path);
 	}
 }
