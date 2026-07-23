@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.configflow.domain.operation.ConsoleLevel;
@@ -126,6 +127,40 @@ class OperationQueueTest {
 
         assertEquals("IllegalStateException",
                 queue.find(accepted.id()).orElseThrow().errorMessage());
+    }
+
+    @Test
+    void anErrorIsRecordedRatherThanLeavingTheOperationRunningForever() {
+        OperationQueue queue = inlineQueue();
+
+        // Catching only Exception would leave this RUNNING for the rest of the session,
+        // with anything watching it waiting for a completion that never arrives.
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            throw new StackOverflowError("too deep");
+        });
+
+        Operation finished = queue.find(accepted.id()).orElseThrow();
+        assertEquals(OperationState.FAILED, finished.state());
+        assertEquals("too deep", finished.errorMessage());
+        assertEquals(1, events.completed.size(), "clients must be told it ended");
+    }
+
+    @Test
+    void anErrorDoesNotStopLaterWorkOnTheSameRepository() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch second = new CountDownLatch(1);
+
+            queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+                throw new StackOverflowError("too deep");
+            });
+            queue.submit(REPO_A, OperationType.CHECKOUT, context -> second.countDown());
+
+            assertTrue(second.await(5, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

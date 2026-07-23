@@ -165,8 +165,17 @@ public final class OperationQueue {
             terminate(operation, OperationState.SUCCEEDED, null);
         } catch (OperationCancelledException e) {
             terminate(operation, OperationState.CANCELLED, null);
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Throwable, not Exception: an Error would otherwise leave the operation
+            // stuck in RUNNING for the rest of the session, and anything watching it
+            // would wait forever.
             terminate(operation, OperationState.FAILED, describe(e));
+            if (e instanceof Error) {
+                // Rethrown rather than swallowed, so the future completes exceptionally
+                // and the failure is not disguised as an orderly finish. The chain
+                // absorbs it either way, so this does not affect queued work.
+                throw (Error) e;
+            }
         }
     }
 

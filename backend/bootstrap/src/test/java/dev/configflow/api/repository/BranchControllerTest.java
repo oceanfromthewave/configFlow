@@ -159,6 +159,16 @@ class BranchControllerTest {
     }
 
     @Test
+    void deleteBranch_unknownBranchIs404() throws Exception {
+        when(branchService.deleteBranch(any(), any(), anyBoolean(), anyBoolean()))
+                .thenThrow(new NoSuchElementException("Branch not found: nope"));
+
+        mvc.perform(delete("/api/v1/repositories/" + UUID.randomUUID() + "/branches/nope"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
     void deleteBranch_unmergedWithoutForceIs409() throws Exception {
         when(branchService.deleteBranch(any(), any(), anyBoolean(), anyBoolean()))
                 .thenThrow(new VcsPreconditionException("Branch feature/x is not fully merged"));
