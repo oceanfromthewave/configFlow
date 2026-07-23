@@ -24,6 +24,8 @@ export interface SseEventMap {
   }
   'workingtree.changed': { repositoryId: string }
   'repository.refs-changed': { repositoryId: string }
+  /** A clone finished and joined the workspace, so the list of them is short by one. */
+  'repository.registered': { repositoryId: string }
   'console.line': {
     repositoryId: string
     operationId?: string
@@ -47,6 +49,7 @@ const EVENT_NAMES: readonly SseEventName[] = [
   'operation.completed',
   'workingtree.changed',
   'repository.refs-changed',
+  'repository.registered',
   'console.line',
   'heartbeat',
 ]

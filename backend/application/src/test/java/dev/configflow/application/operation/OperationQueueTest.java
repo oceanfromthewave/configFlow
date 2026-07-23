@@ -532,6 +532,10 @@ class OperationQueueTest {
         @Override
         public void workingTreeChanged(RepositoryId repositoryId) {
         }
+
+        @Override
+        public void repositoryRegistered(RepositoryId repositoryId) {
+        }
     }
 
     private static class InMemoryHistory implements OperationHistoryStore {

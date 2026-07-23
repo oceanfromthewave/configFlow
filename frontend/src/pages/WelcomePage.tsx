@@ -11,6 +11,7 @@ import { apiErrorKey } from '@/shared/lib/apiErrorMessage'
 import { canPickDirectory, pickDirectory } from '@/shared/lib/nativeBridge'
 import { useUiStore } from '@/shared/lib/uiStore'
 import { Badge, Button, EmptyState, Spinner } from '@/shared/ui'
+import { CloneDialog } from '@/widgets/CloneDialog'
 
 function RepositoryGrid({
   repositories,
@@ -63,6 +64,7 @@ export function WelcomePage() {
   const openRepository = useOpenRepository()
 
   const [pathFormOpen, setPathFormOpen] = useState(false)
+  const [cloneOpen, setCloneOpen] = useState(false)
   const [localPath, setLocalPath] = useState('')
 
   const all = repositories.data ?? []
@@ -121,7 +123,13 @@ export function WelcomePage() {
 
         <div className="flex flex-col gap-3">
           <div className="flex gap-2">
-            <Button variant="primary" disabled title={t('welcome.comingSoon')}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setPathFormOpen(false)
+                setCloneOpen((isOpen) => !isOpen)
+              }}
+            >
               {t('welcome.clone')}
             </Button>
             <Button onClick={addLocal} disabled={registerRepository.isPending}>
@@ -131,6 +139,8 @@ export function WelcomePage() {
               {t('welcome.init')}
             </Button>
           </div>
+
+          {cloneOpen ? <CloneDialog onClose={() => setCloneOpen(false)} /> : null}
 
           {/* Only reachable outside Electron, where no OS picker exists. */}
           {pathFormOpen ? (

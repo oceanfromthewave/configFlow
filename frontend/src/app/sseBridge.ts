@@ -53,6 +53,12 @@ export function applySseInvalidation(
       })
       break
     }
+    case 'repository.registered': {
+      // The clone that produced it finished long after the request returned, so
+      // the Welcome list has no other way to learn about it.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.repositories() })
+      break
+    }
     case 'operation.progress':
     case 'console.line':
     case 'heartbeat':

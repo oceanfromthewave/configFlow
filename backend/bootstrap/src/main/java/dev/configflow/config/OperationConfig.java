@@ -2,7 +2,9 @@ package dev.configflow.config;
 
 import dev.configflow.application.branch.BranchService;
 import dev.configflow.application.operation.OperationQueue;
+import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
+import dev.configflow.application.repository.RepositoryService;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.OperationEvents;
 import dev.configflow.domain.operation.OperationHistoryStore;
@@ -102,5 +104,14 @@ public class OperationConfig {
     public RemoteService remoteService(
             VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events) {
         return new RemoteService(vcsAccess, operationQueue, events);
+    }
+
+    @Bean
+    public CloneService cloneService(
+            VcsProviderRegistry providers,
+            RepositoryService repositoryService,
+            OperationQueue operationQueue,
+            OperationEvents events) {
+        return new CloneService(providers, repositoryService, operationQueue, events);
     }
 }
