@@ -1,5 +1,7 @@
 package dev.configflow.api.error;
 
+import dev.configflow.domain.vcs.exception.MergeConflictException;
+import dev.configflow.domain.vcs.exception.VcsPreconditionException;
 import java.net.URI;
 import java.util.NoSuchElementException;
 
@@ -50,6 +52,25 @@ public class ApiExceptionHandler
 	public ProblemDetail handleCapabilityNotSupported(UnsupportedOperationException e)
 	{
 		return problem(HttpStatus.BAD_REQUEST, "capability-not-supported", "CAPABILITY_NOT_SUPPORTED", "Operation not supported", e.getMessage());
+	}
+
+	/**
+	 * The working copy blocks the request — uncommitted changes in the way, an unmerged branch, a lock held elsewhere. Nothing is wrong with the request and
+	 * nothing is wrong with the server, so neither 400 nor 500 fits: the user has to change the repository's state, or repeat with force.
+	 */
+	@ExceptionHandler(VcsPreconditionException.class)
+	public ProblemDetail handleConflict(VcsPreconditionException e)
+	{
+		return problem(HttpStatus.CONFLICT, "conflict", "CONFLICT", "Repository state blocks this operation", e.getMessage());
+	}
+
+	/** Content conflicts get their own code: the frontend routes them into the resolve flow rather than showing a plain error. */
+	@ExceptionHandler(MergeConflictException.class)
+	public ProblemDetail handleMergeConflict(MergeConflictException e)
+	{
+		ProblemDetail problem = problem(HttpStatus.CONFLICT, "merge-conflict", "MERGE_CONFLICT", "Merge stopped due to conflicts", e.getMessage());
+		problem.setProperty("conflictedPaths", e.conflictedPaths().stream().map(path -> path.toString().replace('\\', '/')).toList());
+		return problem;
 	}
 
 	@ExceptionHandler(Exception.class)

@@ -2,6 +2,7 @@ package dev.configflow.infrastructure.git;
 
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
+import dev.configflow.domain.vcs.port.BranchOperations;
 import dev.configflow.domain.vcs.port.CommitOperations;
 import dev.configflow.domain.vcs.port.DiffOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
@@ -21,7 +22,8 @@ import org.eclipse.jgit.util.FS;
  * <p>Implements the operation ports Git actually supports; callers discover them by
  * checking {@link #capabilities()} and narrowing with {@code instanceof}.</p>
  */
-public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations
+public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations,
+		BranchOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -32,6 +34,7 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 	private final GitDiff diffs;
 
 	private final GitRefs refs;
+	private final GitBranches branches;
 
 	public GitVcsProvider()
 	{
@@ -40,15 +43,16 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
-		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access));
+		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access));
 	}
 
-	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs)
+	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
 		this.diffs = diffs;
 		this.refs = refs;
+		this.branches = branches;
 	}
 
 	@Override
@@ -160,5 +164,29 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 	public List<Revision> compare(RepositoryHandle repo, String base, String target)
 	{
 		return refs.compare(repo,base,target);
+	}
+
+	@Override
+	public void checkout(RepositoryHandle repo, String ref)
+	{
+		branches.checkout(repo, ref);
+	}
+
+	@Override
+	public void createBranch(RepositoryHandle repo, String name, String startPoint, boolean checkout)
+	{
+		branches.createBranch(repo, name, startPoint, checkout);
+	}
+
+	@Override
+	public void deleteBranch(RepositoryHandle repo, String name, boolean remote, boolean force)
+	{
+		branches.deleteBranch(repo, name, remote, force);
+	}
+
+	@Override
+	public void merge(RepositoryHandle repo, MergeRequest request)
+	{
+		branches.merge(repo, request);
 	}
 }
