@@ -11,6 +11,7 @@ import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,7 +23,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -62,6 +66,8 @@ public final class OperationQueue {
     /** Tail of each repository's chain. Bounded by the number of registered repositories. */
     private final Map<String, CompletableFuture<Void>> tails = new ConcurrentHashMap<>();
 
+    private volatile boolean accepting = true;
+
     public OperationQueue(
             OperationHistoryStore history,
             OperationEvents events,
@@ -82,6 +88,9 @@ public final class OperationQueue {
     public Operation submit(RepositoryId repositoryId, OperationType type, OperationTask task) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(task, "task");
+        if (!accepting) {
+            throw new IllegalStateException("The operation queue is shutting down");
+        }
 
         LiveOperation operation = new LiveOperation(OperationId.newId(), repositoryId, type);
         live.put(operation.id, operation);
@@ -112,6 +121,41 @@ public final class OperationQueue {
         }
         operation.cancelRequested.set(true);
         return true;
+    }
+
+    /**
+     * Stops taking work and gives what is already queued a chance to finish.
+     *
+     * <p>Shutting the executor down on its own is not enough. A chain only submits its
+     * next link once the previous one completes, so at that moment only the running
+     * operation is with the executor — everything behind it would be rejected on
+     * submission and left sitting at {@code QUEUED} forever, with clients waiting on a
+     * completion event that never arrives.</p>
+     *
+     * <p>So: stop accepting, wait for the chains, and mark whatever is still unfinished
+     * as cancelled. Callers must not shut the executor down until this returns.</p>
+     *
+     * @param grace how long to wait for outstanding work before giving up on it
+     */
+    public void shutdown(Duration grace) {
+        accepting = false;
+
+        CompletableFuture<?>[] outstanding = tails.values().toArray(CompletableFuture[]::new);
+        try {
+            CompletableFuture.allOf(outstanding).get(grace.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException | TimeoutException e) {
+            // A failed chain already recorded itself, and anything past the deadline is
+            // handled below. Either way there is nothing left to wait for.
+        }
+
+        for (LiveOperation operation : live.values()) {
+            if (!operation.state.isTerminal()) {
+                terminate(operation, OperationState.CANCELLED,
+                        "The application shut down before this operation finished");
+            }
+        }
     }
 
     /** One operation, live or read back from history. */
