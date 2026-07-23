@@ -1,5 +1,6 @@
 package dev.configflow.application.repository;
 
+import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
@@ -24,12 +25,14 @@ public final class RepositoryService
 
 	private final RepositoryStore repositoryStore;
 	private final VcsProviderRegistry providers;
+	private final VcsAccess access;
 	private final Clock clock;
 
 	public RepositoryService(RepositoryStore repositoryStore, VcsProviderRegistry providers, Clock clock)
 	{
 		this.repositoryStore = Objects.requireNonNull(repositoryStore, "repositoryStore");
 		this.providers = Objects.requireNonNull(providers, "providers");
+		this.access = new VcsAccess(repositoryStore, providers);
 		this.clock = Objects.requireNonNull(clock, "clock");
 	}
 
@@ -63,7 +66,7 @@ public final class RepositoryService
 	/** Marks a repository as opened now (updates its last-opened time). */
 	public Repository open(RepositoryId id)
 	{
-		Repository repository = require(id).opened(clock.instant());
+		Repository repository = access.require(id).opened(clock.instant());
 		repositoryStore.save(repository);
 		return repository;
 	}
@@ -78,7 +81,7 @@ public final class RepositoryService
 	 */
 	public WorkingTreeStatus status(RepositoryId id)
 	{
-		Opened<WorkingTreeOperations> opened = openWith(id, WorkingTreeOperations.class);
+		VcsAccess.Opened<WorkingTreeOperations> opened = access.open(id, WorkingTreeOperations.class);
 		return opened.operations().status(opened.handle());
 	}
 
@@ -86,7 +89,7 @@ public final class RepositoryService
 	public void stage(RepositoryId id, List<Path> paths)
 	{
 		List<Path> safePaths = requirePaths(paths);
-		Opened<WorkingTreeOperations> opened = openWith(id, WorkingTreeOperations.class);
+		VcsAccess.Opened<WorkingTreeOperations> opened = access.open(id, WorkingTreeOperations.class);
 		opened.operations().stage(opened.handle(), safePaths);
 	}
 
@@ -94,7 +97,7 @@ public final class RepositoryService
 	public void unstage(RepositoryId id, List<Path> paths)
 	{
 		List<Path> safePaths = requirePaths(paths);
-		Opened<WorkingTreeOperations> opened = openWith(id, WorkingTreeOperations.class);
+		VcsAccess.Opened<WorkingTreeOperations> opened = access.open(id, WorkingTreeOperations.class);
 		opened.operations().unstage(opened.handle(), safePaths);
 	}
 
@@ -113,7 +116,7 @@ public final class RepositoryService
 		{
 			throw new IllegalArgumentException("Commit message must not be blank");
 		}
-		Opened<CommitOperations> opened = openWith(id, CommitOperations.class);
+		VcsAccess.Opened<CommitOperations> opened = access.open(id, CommitOperations.class);
 		if(request.amend() && !opened.provider().capabilities().contains(VcsCapability.AMEND))
 		{
 			throw new UnsupportedOperationException(opened.provider().type() + " does not support amending");
@@ -139,7 +142,7 @@ public final class RepositoryService
 		{
 			throw new IllegalArgumentException("limit must not exceed " + MAX_HISTORY_LIMIT + ", was " + query.limit());
 		}
-		Opened<CommitOperations> opened = openWith(id, CommitOperations.class);
+		VcsAccess.Opened<CommitOperations> opened = access.open(id, CommitOperations.class);
 		return opened.operations().history(opened.handle(), query);
 	}
 
@@ -152,7 +155,7 @@ public final class RepositoryService
 	public Revision show(RepositoryId id, RevisionId revision)
 	{
 		Objects.requireNonNull(revision, "revision");
-		Opened<CommitOperations> opened = openWith(id, CommitOperations.class);
+		VcsAccess.Opened<CommitOperations> opened = access.open(id, CommitOperations.class);
 		return opened.operations().show(opened.handle(), revision);
 	}
 
@@ -166,7 +169,7 @@ public final class RepositoryService
 	public FileDiff diffWorking(RepositoryId id, Path path, boolean staged)
 	{
 		Path safePath = requirePath(path);
-		Opened<DiffOperations> opened = openWith(id, DiffOperations.class);
+		VcsAccess.Opened<DiffOperations> opened = access.open(id, DiffOperations.class);
 		return opened.operations().diffWorking(opened.handle(), safePath, staged);
 	}
 
@@ -178,7 +181,7 @@ public final class RepositoryService
 	 */
 	public List<RefLabel> listRefs(RepositoryId id)
 	{
-		Opened<RefBrowseOperations> opened = openWith(id, RefBrowseOperations.class);
+		VcsAccess.Opened<RefBrowseOperations> opened = access.open(id, RefBrowseOperations.class);
 		return opened.operations().listRefs(opened.handle());
 	}
 
@@ -197,35 +200,11 @@ public final class RepositoryService
 		// unsupported capability, and every rejected request still opened the repository.
 		String safeBase = requireRef(base, "base");
 		String safeTarget = requireRef(target, "target");
-		Opened<RefBrowseOperations> opened = openWith(id, RefBrowseOperations.class);
+		VcsAccess.Opened<RefBrowseOperations> opened = access.open(id, RefBrowseOperations.class);
 		return opened.operations().compare(opened.handle(), safeBase, safeTarget);
 	}
 
 	/**
-	 * Resolves a registered repository into a live handle plus the requested operation port.
-	 *
-	 * @throws NoSuchElementException
-	 * 		if no repository has the given id
-	 * @throws UnsupportedOperationException
-	 * 		if its provider does not implement {@code port}
-	 */
-	private <T> Opened<T> openWith(RepositoryId id, Class<T> port)
-	{
-		Repository repository = require(id);
-		VcsProvider provider = providers.byType(repository.vcsType())
-				.orElseThrow(() -> new IllegalStateException("No provider registered for " + repository.vcsType()));
-		if(!port.isInstance(provider))
-		{
-			throw new UnsupportedOperationException(repository.vcsType() + " has no " + port.getSimpleName());
-		}
-		return new Opened<>(provider, provider.open(repository.localPath()), port.cast(provider));
-	}
-
-	/** A repository resolved down to one live operation port. */
-	private record Opened<T>(VcsProvider provider, RepositoryHandle handle, T operations)
-	{
-	}
-
 	/**
 	 * Rejects anything that could point outside the working copy: the paths come from a client, and both absolute paths and {@code ..} segments would escape
 	 * it.
@@ -262,10 +241,6 @@ public final class RepositoryService
 		return ref.trim();
 	}
 
-	private Repository require(RepositoryId id)
-	{
-		return repositoryStore.findById(id).orElseThrow(() -> new NoSuchElementException("Repository not found: " + id.asString()));
-	}
 
 	private static String deriveName(Path localPath)
 	{

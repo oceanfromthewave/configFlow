@@ -1,0 +1,408 @@
+package dev.configflow.application.operation;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.configflow.domain.operation.ConsoleLevel;
+import dev.configflow.domain.operation.Operation;
+import dev.configflow.domain.operation.OperationEvents;
+import dev.configflow.domain.operation.OperationHistoryStore;
+import dev.configflow.domain.operation.OperationId;
+import dev.configflow.domain.operation.OperationProgress;
+import dev.configflow.domain.operation.OperationState;
+import dev.configflow.domain.operation.OperationType;
+import dev.configflow.domain.repository.RepositoryId;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+
+class OperationQueueTest {
+
+    private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
+    private static final RepositoryId REPO_A = RepositoryId.newId();
+    private static final RepositoryId REPO_B = RepositoryId.newId();
+
+    private final RecordingEvents events = new RecordingEvents();
+    private final InMemoryHistory history = new InMemoryHistory();
+
+    /** Runs tasks inline, so submit() returns only once the work is done. */
+    private OperationQueue inlineQueue() {
+        return new OperationQueue(history, events, fixedClock(), Runnable::run);
+    }
+
+    private static Clock fixedClock() {
+        return Clock.fixed(NOW, ZoneOffset.UTC);
+    }
+
+    // --- happy path ------------------------------------------------------
+
+    @Test
+    void submit_answersImmediatelyWithAQueuedOperation() {
+        // A queue that never runs anything, so the returned snapshot cannot have advanced.
+        OperationQueue queue = new OperationQueue(history, events, fixedClock(), task -> {
+        });
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+        });
+
+        assertEquals(OperationState.QUEUED, accepted.state());
+        assertEquals(OperationType.CHECKOUT, accepted.type());
+        assertEquals(REPO_A, accepted.repositoryId());
+        assertNull(accepted.startedAt());
+    }
+
+    @Test
+    void successfulTaskIsRecordedAndArchived() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+        });
+
+        Operation finished = queue.find(accepted.id()).orElseThrow();
+        assertEquals(OperationState.SUCCEEDED, finished.state());
+        assertEquals(NOW, finished.startedAt());
+        assertEquals(NOW, finished.finishedAt());
+        assertNull(finished.errorMessage());
+        assertTrue(history.saved.containsKey(accepted.id()), "terminal state must be archived");
+    }
+
+    @Test
+    void progressAndConsoleLinesReachTheEventsPort() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            context.log("checkout main", ConsoleLevel.CMD);
+            context.progress(new OperationProgress(50, "Switching", "half way"));
+        });
+
+        // The queue announces the start itself, then the task's own report follows.
+        assertEquals(2, events.progress.size());
+        assertEquals(OperationType.CHECKOUT.name(), events.progress.get(0).phase());
+        assertEquals(50, events.progress.get(1).percent());
+        assertEquals(List.of("cmd:checkout main"), events.consoleLines);
+        assertEquals(List.of(accepted.id()), events.completed.stream().map(Operation::id).toList());
+        assertEquals(List.of("checkout main"), queue.find(accepted.id()).orElseThrow().logLines());
+    }
+
+    // --- failures --------------------------------------------------------
+
+    @Test
+    void failingTaskIsRecordedAsFailedWithItsMessage() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            throw new IllegalStateException("index.lock exists");
+        });
+
+        Operation finished = queue.find(accepted.id()).orElseThrow();
+        assertEquals(OperationState.FAILED, finished.state());
+        assertEquals("index.lock exists", finished.errorMessage());
+        assertEquals(OperationState.FAILED, events.completed.get(0).state());
+    }
+
+    @Test
+    void failureMessageFallsBackToTheExceptionType() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            throw new IllegalStateException();
+        });
+
+        assertEquals("IllegalStateException",
+                queue.find(accepted.id()).orElseThrow().errorMessage());
+    }
+
+    @Test
+    void oneFailureDoesNotStrandTheRestOfTheChain() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch second = new CountDownLatch(1);
+
+            queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+                throw new IllegalStateException("boom");
+            });
+            queue.submit(REPO_A, OperationType.CHECKOUT, context -> second.countDown());
+
+            assertTrue(second.await(5, TimeUnit.SECONDS),
+                    "work queued behind a failure must still run");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void aBrokenHistoryStoreDoesNotFailTheOperation() {
+        OperationHistoryStore broken = new InMemoryHistory() {
+            @Override
+            public void save(Operation operation) {
+                throw new IllegalStateException("disk is full");
+            }
+        };
+        OperationQueue queue = new OperationQueue(broken, events, fixedClock(), Runnable::run);
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+        });
+
+        Operation finished = queue.find(accepted.id()).orElseThrow();
+        assertEquals(OperationState.SUCCEEDED, finished.state(),
+                "archiving is not part of the work being done");
+        assertTrue(finished.logLines().stream().anyMatch(line -> line.contains("disk is full")),
+                () -> "the archive failure should be visible: " + finished.logLines());
+    }
+
+    // --- serialisation ---------------------------------------------------
+
+    @Test
+    void operationsOnOneRepositoryNeverOverlap() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            AtomicInteger concurrent = new AtomicInteger();
+            AtomicInteger peak = new AtomicInteger();
+            CountDownLatch done = new CountDownLatch(8);
+
+            for (int i = 0; i < 8; i++) {
+                queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+                    peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
+                    Thread.sleep(15);
+                    concurrent.decrementAndGet();
+                    done.countDown();
+                });
+            }
+
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertEquals(1, peak.get(), "a working copy tolerates exactly one writer");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void differentRepositoriesRunInParallel() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch bothStarted = new CountDownLatch(2);
+
+            OperationTask waitForTheOther = context -> {
+                bothStarted.countDown();
+                // Deadlocks unless the other repository really is running concurrently.
+                assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
+            };
+            queue.submit(REPO_A, OperationType.CHECKOUT, waitForTheOther);
+            queue.submit(REPO_B, OperationType.CHECKOUT, waitForTheOther);
+
+            assertTrue(bothStarted.await(5, TimeUnit.SECONDS),
+                    "separate repositories share nothing and must not queue behind each other");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    // --- cancellation ----------------------------------------------------
+
+    @Test
+    void cancellingAQueuedOperationStopsItBeforeItTouchesAnything() throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch blocker = new CountDownLatch(1);
+            AtomicInteger ran = new AtomicInteger();
+
+            queue.submit(REPO_A, OperationType.CHECKOUT, context -> blocker.await());
+            Operation queued = queue.submit(
+                    REPO_A, OperationType.CHECKOUT, context -> ran.incrementAndGet());
+
+            assertTrue(queue.cancel(queued.id()));
+            blocker.countDown();
+
+            waitForState(queue, queued.id(), OperationState.CANCELLED);
+            assertEquals(0, ran.get(), "a cancelled task must never start");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void aRunningTaskStopsWhereItChecks() {
+        OperationQueue queue = inlineQueue();
+        AtomicInteger reachedEnd = new AtomicInteger();
+
+        // Cancel from inside, which is the only way to observe it with an inline executor.
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            queue.cancel(context.operationId());
+            context.throwIfCancelled();
+            reachedEnd.incrementAndGet();
+        });
+
+        assertEquals(OperationState.CANCELLED, queue.find(accepted.id()).orElseThrow().state());
+        assertEquals(0, reachedEnd.get());
+    }
+
+    @Test
+    void aTaskThatNeverChecksRunsToCompletion() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            queue.cancel(context.operationId());
+            // Deliberately never asks, which the contract says means it finishes.
+        });
+
+        assertEquals(OperationState.SUCCEEDED, queue.find(accepted.id()).orElseThrow().state());
+    }
+
+    @Test
+    void cancellingAFinishedOrUnknownOperationReportsFalse() {
+        OperationQueue queue = inlineQueue();
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+        });
+
+        assertFalse(queue.cancel(accepted.id()), "already finished");
+        assertFalse(queue.cancel(OperationId.newId()), "never existed");
+    }
+
+    // --- listing ---------------------------------------------------------
+
+    @Test
+    void listIsScopedToOneRepositoryAndCanFilterByState() {
+        OperationQueue queue = inlineQueue();
+        queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+        });
+        queue.submit(REPO_A, OperationType.BRANCH_CREATE, context -> {
+            throw new IllegalStateException("nope");
+        });
+        queue.submit(REPO_B, OperationType.CHECKOUT, context -> {
+        });
+
+        assertEquals(2, queue.list(REPO_A, null).size());
+        assertEquals(1, queue.list(REPO_A, OperationState.FAILED).size());
+        assertEquals(1, queue.list(REPO_B, null).size());
+        assertEquals(3, queue.list(null, null).size(), "no filter means every repository");
+    }
+
+    @Test
+    void findFallsBackToHistoryOnceAnOperationIsEvicted() {
+        OperationQueue queue = inlineQueue();
+        List<OperationId> ids = new ArrayList<>();
+        for (int i = 0; i < OperationQueue.MAX_RETAINED + 5; i++) {
+            ids.add(queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            }).id());
+        }
+
+        // The oldest fell out of memory, but archiving means it is still findable.
+        Operation oldest = queue.find(ids.get(0)).orElseThrow();
+        assertEquals(OperationState.SUCCEEDED, oldest.state());
+        assertNotNull(history.saved.get(ids.get(0)));
+    }
+
+    @Test
+    void consoleOutputIsCappedSoARunawayTaskCannotExhaustTheHeap() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            for (int i = 0; i < OperationQueue.MAX_LOG_LINES + 50; i++) {
+                context.log("line " + i, ConsoleLevel.OUT);
+            }
+        });
+
+        List<String> lines = queue.find(accepted.id()).orElseThrow().logLines();
+        assertEquals(OperationQueue.MAX_LOG_LINES + 1, lines.size());
+        assertTrue(lines.get(lines.size() - 1).contains("suppressed"));
+    }
+
+    // --- helpers ---------------------------------------------------------
+
+    private static void waitForState(
+            OperationQueue queue, OperationId id, OperationState expected) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            if (queue.find(id).map(Operation::state).orElse(null) == expected) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("operation never reached " + expected);
+    }
+
+    private static final class RecordingEvents implements OperationEvents {
+
+        private final List<OperationProgress> progress =
+                Collections.synchronizedList(new ArrayList<>());
+        private final List<Operation> completed = Collections.synchronizedList(new ArrayList<>());
+        private final List<String> consoleLines =
+                Collections.synchronizedList(new ArrayList<>());
+        private final List<RepositoryId> refsChanged =
+                Collections.synchronizedList(new ArrayList<>());
+
+        @Override
+        public void progress(OperationId id, OperationProgress value) {
+            progress.add(value);
+        }
+
+        @Override
+        public void completed(Operation operation) {
+            completed.add(operation);
+        }
+
+        @Override
+        public void consoleLine(
+                RepositoryId repositoryId, OperationId id, String line, String level) {
+            consoleLines.add(level + ":" + line);
+        }
+
+        @Override
+        public void refsChanged(RepositoryId repositoryId) {
+            refsChanged.add(repositoryId);
+        }
+
+        @Override
+        public void workingTreeChanged(RepositoryId repositoryId) {
+        }
+    }
+
+    private static class InMemoryHistory implements OperationHistoryStore {
+
+        private final Map<OperationId, Operation> saved =
+                Collections.synchronizedMap(new LinkedHashMap<>());
+
+        @Override
+        public void save(Operation operation) {
+            saved.put(operation.id(), operation);
+        }
+
+        @Override
+        public Optional<Operation> findById(OperationId id) {
+            return Optional.ofNullable(saved.get(id));
+        }
+
+        @Override
+        public List<Operation> findRecent(RepositoryId repositoryId, int limit) {
+            List<Operation> matching = new ArrayList<>();
+            synchronized (saved) {
+                for (Operation operation : saved.values()) {
+                    if (repositoryId.equals(operation.repositoryId())) {
+                        matching.add(operation);
+                    }
+                }
+            }
+            Collections.reverse(matching);
+            return matching.size() > limit ? matching.subList(0, limit) : matching;
+        }
+    }
+}
