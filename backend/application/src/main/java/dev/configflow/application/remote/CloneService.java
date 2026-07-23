@@ -24,8 +24,8 @@ import java.util.Objects;
  * Use case: cloning a repository into the workspace.
  *
  * <p>Apart from every other queued operation in one way: there is no repository yet, so
- * nothing to serialise against and no id to report against until it finishes. The clone
- * runs, and only then does the result get registered.</p>
+ * no id to report against until it finishes. What it serialises on is the target
+ * directory. The clone runs, and only then does the result get registered.</p>
  */
 public final class CloneService {
 
@@ -60,14 +60,19 @@ public final class CloneService {
                 vcsType == null ? VcsType.GIT : vcsType);
         CloneRequest request = new CloneRequest(remoteUrl, target, credentialId);
 
-        // No repository id: this operation has nothing to queue behind, which is why the
-        // queue gives repository-less work its own chain.
-        return queue.submit(null, OperationType.CLONE, context -> {
+        // There is no repository yet, but there is still something exclusive: the target
+        // directory. Two clones into one directory would write over each other.
+        return queue.submit(null, target.toString(), OperationType.CLONE, context -> {
+            // Checked again now that this clone holds the target's chain. The check in
+            // clone() ran on the request thread, before anything was serialised, so a
+            // second request could pass it while the first was still transferring.
+            requireEmpty(target);
+
             context.log("clone " + remoteUrl + " " + target, ConsoleLevel.CMD);
             engine.cloneRepository(request, monitorFor(context));
 
             context.progress(OperationProgress.indeterminate("Registering"));
-            Repository registered = repositories.register(target);
+            Repository registered = registerClone(target);
             // The clone finished long after the request that started it returned, so the
             // Welcome list has no other way to learn about this.
             events.repositoryRegistered(registered.id());
@@ -75,28 +80,54 @@ public final class CloneService {
     }
 
     /**
+     * Records the finished clone in the workspace.
+     *
+     * <p>The transfer is the expensive, irreversible half and it has already succeeded, so
+     * failing to record it must not throw it away — deleting here would also destroy the
+     * working copy in the one case registration reliably fails, which is when that path is
+     * registered already. Name the path instead: it is a usable working copy, and adding a
+     * local repository takes it from there.</p>
+     */
+    private Repository registerClone(Path target) {
+        try {
+            return repositories.register(target);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException(
+                    "Cloned into " + target + " but could not add it to the workspace: "
+                            + e.getMessage()
+                            + ". The clone itself is intact — add it as a local repository.",
+                    e);
+        }
+    }
+
+    /**
      * The target must not already hold anything.
      *
-     * <p>Checked here rather than left to the engine because a clone into a non-empty
-     * directory fails halfway, and the cleanup then cannot tell what it created from what
-     * was already there.</p>
+     * <p>Checked rather than left to the engine because a clone into a non-empty directory
+     * fails halfway, and the cleanup then cannot tell what it created from what was
+     * already there.</p>
      */
     private static Path requireTarget(Path localPath) {
         if (localPath == null) {
             throw new IllegalArgumentException("A 'localPath' is required");
         }
         Path target = localPath.toAbsolutePath().normalize();
-        if (Files.exists(target)) {
-            try (var entries = Files.list(target)) {
-                if (entries.findAny().isPresent()) {
-                    throw new IllegalArgumentException(
-                            "The target directory is not empty: " + target);
-                }
-            } catch (java.io.IOException e) {
-                throw new IllegalArgumentException("Cannot read the target directory: " + target, e);
-            }
-        }
+        requireEmpty(target);
         return target;
+    }
+
+    private static void requireEmpty(Path target) {
+        if (!Files.exists(target)) {
+            return;
+        }
+        try (var entries = Files.list(target)) {
+            if (entries.findAny().isPresent()) {
+                throw new IllegalArgumentException(
+                        "The target directory is not empty: " + target);
+            }
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Cannot read the target directory: " + target, e);
+        }
     }
 
     private RepositoryOperations engineFor(VcsType vcsType) {

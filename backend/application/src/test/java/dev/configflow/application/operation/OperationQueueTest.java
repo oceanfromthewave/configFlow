@@ -417,8 +417,57 @@ class OperationQueueTest {
                 bothStarted.countDown();
                 assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
             };
-            queue.submit(null, OperationType.CLONE, waitForTheOther);
-            queue.submit(null, OperationType.CLONE, waitForTheOther);
+            queue.submit(null, "C:/dev/one", OperationType.CLONE, waitForTheOther);
+            queue.submit(null, "C:/dev/two", OperationType.CLONE, waitForTheOther);
+
+            assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void repositorylessWorkOnTheSameResourceStillRunsOneAtATime() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            AtomicInteger concurrent = new AtomicInteger();
+            AtomicInteger peak = new AtomicInteger();
+            CountDownLatch done = new CountDownLatch(4);
+
+            // Having no repository does not mean sharing nothing: a clone owns its target
+            // directory, and two of them there would write over each other.
+            for (int i = 0; i < 4; i++) {
+                queue.submit(null, "C:/dev/same", OperationType.CLONE, context -> {
+                    peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
+                    Thread.sleep(15);
+                    concurrent.decrementAndGet();
+                    done.countDown();
+                });
+            }
+
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertEquals(1, peak.get(), "one directory tolerates exactly one writer");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void aResourceKeyCannotCollideWithARepositoryId() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch bothStarted = new CountDownLatch(2);
+
+            OperationTask waitForTheOther = context -> {
+                bothStarted.countDown();
+                assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
+            };
+            // A directory named exactly like a repository id must not inherit that
+            // repository's chain and stall behind its work.
+            queue.submit(REPO_A, OperationType.CHECKOUT, waitForTheOther);
+            queue.submit(null, REPO_A.asString(), OperationType.CLONE, waitForTheOther);
 
             assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
         } finally {
