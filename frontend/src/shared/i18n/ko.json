@@ -78,6 +78,7 @@
   "welcome.recentEmptyTitle": "최근 연 저장소가 없습니다",
   "welcome.recentEmptyDescription": "저장소를 열면 최근 목록에 표시됩니다.",
   "welcome.comingSoon": "추후 지원",
+  "welcome.noPickerHint": "브라우저에서는 폴더 선택창을 열 수 없어 경로를 직접 입력합니다. 데스크톱 앱에서는 탐색기가 열립니다.",
   "welcome.addLocalPlaceholder": "저장소 폴더 경로 (예: C:\\dev\\myrepo)",
   "welcome.addLocalSubmit": "등록",
   "welcome.registering": "등록 중…",
