@@ -8,6 +8,7 @@ import {
 import type { RepositorySummary } from '@/entities/repository/model/types'
 import { useT } from '@/shared/i18n'
 import { apiErrorKey } from '@/shared/lib/apiErrorMessage'
+import { canPickDirectory, pickDirectory } from '@/shared/lib/nativeBridge'
 import { useUiStore } from '@/shared/lib/uiStore'
 import { Badge, Button, EmptyState, Spinner } from '@/shared/ui'
 
@@ -76,6 +77,26 @@ export function WelcomePage() {
     })
   }
 
+  /**
+   * Picks a folder natively where that is possible, and falls back to typing a
+   * path where it is not.
+   *
+   * A browser cannot hand back a real filesystem path — the File System Access
+   * API deals in handles and `webkitdirectory` in relative names — so the text
+   * field is not a lesser alternative, it is the only thing that works there.
+   */
+  async function addLocal() {
+    if (!canPickDirectory()) {
+      setPathFormOpen((isOpen) => !isOpen)
+      return
+    }
+    registerRepository.reset()
+    const picked = await pickDirectory()
+    if (picked != null) {
+      registerRepository.mutate(picked)
+    }
+  }
+
   function submitPath(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const trimmed = localPath.trim()
@@ -103,7 +124,7 @@ export function WelcomePage() {
             <Button variant="primary" disabled title={t('welcome.comingSoon')}>
               {t('welcome.clone')}
             </Button>
-            <Button onClick={() => setPathFormOpen((isOpen) => !isOpen)}>
+            <Button onClick={addLocal} disabled={registerRepository.isPending}>
               {t('welcome.addLocal')}
             </Button>
             <Button disabled title={t('welcome.comingSoon')}>
@@ -111,6 +132,7 @@ export function WelcomePage() {
             </Button>
           </div>
 
+          {/* Only reachable outside Electron, where no OS picker exists. */}
           {pathFormOpen ? (
             <form onSubmit={submitPath} className="flex flex-col gap-2">
               <div className="flex gap-2">
@@ -119,6 +141,7 @@ export function WelcomePage() {
                   value={localPath}
                   onChange={(event) => setLocalPath(event.target.value)}
                   placeholder={t('welcome.addLocalPlaceholder')}
+                  aria-label={t('welcome.addLocalPlaceholder')}
                   className="flex-1 rounded-md border border-border bg-elevated px-3 py-1.5 text-sm text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
                 />
                 <Button
@@ -131,13 +154,20 @@ export function WelcomePage() {
                     : t('welcome.addLocalSubmit')}
                 </Button>
               </div>
-              {registerRepository.isError ? (
-                <p className="text-xs text-vcs-deleted">
-                  {t('welcome.registerFailed')}:{' '}
-                  {t(apiErrorKey(registerRepository.error))}
-                </p>
-              ) : null}
+              <p className="text-xs text-muted">{t('welcome.noPickerHint')}</p>
             </form>
+          ) : null}
+
+          {registerRepository.isPending && !pathFormOpen ? (
+            <p className="text-xs text-muted">{t('welcome.registering')}</p>
+          ) : null}
+
+          {/* Outside the form: with the OS picker there is no form to attach it to. */}
+          {registerRepository.isError ? (
+            <p className="text-xs text-vcs-deleted">
+              {t('welcome.registerFailed')}:{' '}
+              {t(apiErrorKey(registerRepository.error))}
+            </p>
           ) : null}
         </div>
 

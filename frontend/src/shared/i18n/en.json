@@ -78,6 +78,7 @@
   "welcome.recentEmptyTitle": "No recent repositories",
   "welcome.recentEmptyDescription": "Repositories you open will show up in this list.",
   "welcome.comingSoon": "Coming soon",
+  "welcome.noPickerHint": "A browser cannot open a folder picker, so type the path here. The desktop app opens your file explorer instead.",
   "welcome.addLocalPlaceholder": "Repository folder path (e.g. C:\\dev\\myrepo)",
   "welcome.addLocalSubmit": "Register",
   "welcome.registering": "Registering…",
