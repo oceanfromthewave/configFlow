@@ -8,6 +8,7 @@ import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.port.VcsProviderRegistry;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -48,17 +49,30 @@ public class OperationConfig {
     /**
      * Lets a Git command in flight finish before the JVM goes away.
      *
-     * <p>{@code shutdownNow} on its own interrupts the worker mid-write, which is the
-     * exact thing the queue's cooperative cancellation exists to avoid — a half-written
-     * index is worse than a slow exit. So: stop accepting work, wait, and only force the
-     * issue if something is still running after the grace period.</p>
+     * <p>Order matters. The queue drains first, because only it knows what is still
+     * waiting behind the running operation — the executor has never seen those tasks and
+     * would drop them silently. Only then does the pool wind down, and
+     * {@code shutdownNow} is a last resort: interrupting a worker mid-write is the exact
+     * thing the queue's cooperative cancellation exists to avoid, and a half-written
+     * index is worse than a slow exit.</p>
      */
     @Bean
-    public DisposableBean operationExecutorShutdown(ExecutorService operationExecutor) {
+    public DisposableBean operationShutdown(
+            OperationQueue operationQueue, ExecutorService operationExecutor) {
         return () -> {
+            operationQueue.shutdown(Duration.ofSeconds(SHUTDOWN_GRACE_SECONDS));
             operationExecutor.shutdown();
-            if (!operationExecutor.awaitTermination(SHUTDOWN_GRACE_SECONDS, TimeUnit.SECONDS)) {
+            try {
+                if (!operationExecutor.awaitTermination(
+                        SHUTDOWN_GRACE_SECONDS, TimeUnit.SECONDS)) {
+                    operationExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                // Being interrupted while waiting is itself a "stop now" signal, and the
+                // flag has to survive: swallowing it hides the shutdown from whatever
+                // runs next on this thread.
                 operationExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
             }
         };
     }

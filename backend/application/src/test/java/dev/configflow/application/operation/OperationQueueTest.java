@@ -17,6 +17,7 @@ import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -311,6 +312,73 @@ class OperationQueueTest {
 
         assertFalse(queue.cancel(accepted.id()), "already finished");
         assertFalse(queue.cancel(OperationId.newId()), "never existed");
+    }
+
+    // --- shutdown --------------------------------------------------------
+
+    @Test
+    void shutdownLetsRunningWorkFinish() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch started = new CountDownLatch(1);
+
+            Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+                started.countDown();
+                Thread.sleep(50);
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+
+            queue.shutdown(Duration.ofSeconds(5));
+
+            assertEquals(OperationState.SUCCEEDED,
+                    queue.find(accepted.id()).orElseThrow().state());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void shutdownCompletesWorkTheExecutorNeverSaw() throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch blocker = new CountDownLatch(1);
+            CountDownLatch started = new CountDownLatch(1);
+
+            queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+                started.countDown();
+                blocker.await();
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            // Chained behind the blocked one, so the executor has never seen this task.
+            Operation waiting = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            });
+            assertEquals(OperationState.QUEUED, queue.find(waiting.id()).orElseThrow().state());
+
+            queue.shutdown(Duration.ofMillis(200));
+            blocker.countDown();
+
+            // Left at QUEUED it would never emit a completion, and a client watching it
+            // would wait for an event that can no longer arrive.
+            Operation finished = queue.find(waiting.id()).orElseThrow();
+            assertTrue(finished.state().isTerminal(), () -> "still " + finished.state());
+            assertEquals(OperationState.CANCELLED, finished.state());
+            assertTrue(events.completed.stream()
+                    .anyMatch(operation -> operation.id().equals(waiting.id())));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void submittingAfterShutdownIsRefused() {
+        OperationQueue queue = inlineQueue();
+        queue.shutdown(Duration.ZERO);
+
+        assertThrows(IllegalStateException.class, () -> queue.submit(
+                REPO_A, OperationType.CHECKOUT, context -> {
+                }));
     }
 
     // --- listing ---------------------------------------------------------
