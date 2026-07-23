@@ -1,8 +1,9 @@
 import { useMemo, type ReactNode } from 'react'
 
-import { useRefs } from '@/entities/repository/api/repositories'
+import { useCheckout, useRefs } from '@/entities/repository/api/repositories'
 import type { RefLabel } from '@/entities/repository/model/types'
 import { useT } from '@/shared/i18n'
+import { apiErrorKey } from '@/shared/lib/apiErrorMessage'
 import { cn } from '@/shared/lib/cn'
 import { useUiStore } from '@/shared/lib/uiStore'
 import { Spinner } from '@/shared/ui'
@@ -38,20 +39,23 @@ function RefItem({
   name,
   current,
   currentLabel,
+  onCheckout,
+  checkoutLabel,
+  disabled,
 }: {
   name: string
   current: boolean
   currentLabel: string
+  onCheckout?: () => void
+  checkoutLabel: string
+  disabled: boolean
 }) {
-  return (
-    <div
-      title={name}
-      aria-current={current}
-      className={cn(
-        'flex h-6 select-none items-center gap-1.5 rounded px-2 text-[13px] hover:bg-elevated',
-        current ? 'text-primary' : 'text-primary/90',
-      )}
-    >
+  const className = cn(
+    'flex h-6 w-full select-none items-center gap-1.5 rounded px-2 text-left text-[13px] hover:bg-elevated',
+    current ? 'text-primary' : 'text-primary/90',
+  )
+  const content = (
+    <>
       {/* A dot rather than bold text: the row stays the same width either way. */}
       {current ? (
         <span aria-label={currentLabel} title={currentLabel} className="text-accent">
@@ -59,7 +63,32 @@ function RefItem({
         </span>
       ) : null}
       <span className="min-w-0 truncate">{name}</span>
-    </div>
+    </>
+  )
+
+  // Only a branch you are not already on is worth clicking.
+  if (onCheckout == null || current) {
+    return (
+      <div title={name} aria-current={current} className={className}>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      title={`${checkoutLabel}: ${name}`}
+      aria-label={`${checkoutLabel}: ${name}`}
+      disabled={disabled}
+      onClick={onCheckout}
+      className={cn(
+        className,
+        'outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50',
+      )}
+    >
+      {content}
+    </button>
   )
 }
 
@@ -71,6 +100,7 @@ export function Sidebar() {
   const t = useT()
   const repositoryId = useUiStore((s) => s.currentRepositoryId)
   const refs = useRefs(repositoryId)
+  const checkout = useCheckout()
 
   const { head, local, remote, tags } = useMemo(() => {
     const all: RefLabel[] = refs.data?.refs ?? []
@@ -88,7 +118,7 @@ export function Sidebar() {
   // which never matches a branch name.
   const detached = head != null && !local.includes(head)
 
-  function renderRefs(names: string[], markCurrent: boolean) {
+  function renderRefs(names: string[], markCurrent: boolean, checkoutable = false) {
     if (repositoryId == null) {
       return <SectionEmpty>{t('sidebar.noRepository')}</SectionEmpty>
     }
@@ -116,6 +146,13 @@ export function Sidebar() {
         name={name}
         current={markCurrent && name === head}
         currentLabel={t('sidebar.currentBranch')}
+        checkoutLabel={t('branch.checkout')}
+        disabled={checkout.isPending}
+        onCheckout={
+          checkoutable && repositoryId != null
+            ? () => checkout.mutate({ repositoryId, ref: name })
+            : undefined
+        }
       />
     ))
   }
@@ -134,7 +171,12 @@ export function Sidebar() {
             {t('sidebar.detachedHead')}: {head?.slice(0, 7)}
           </p>
         ) : null}
-        {renderRefs(local, true)}
+        {checkout.isError ? (
+          <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+            {t('branch.checkoutFailed')}: {t(apiErrorKey(checkout.error))}
+          </p>
+        ) : null}
+        {renderRefs(local, true, true)}
       </Section>
 
       <Section title={t('sidebar.remote')}>{renderRefs(remote, false)}</Section>
