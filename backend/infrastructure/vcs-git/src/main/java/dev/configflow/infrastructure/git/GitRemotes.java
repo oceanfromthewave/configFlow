@@ -28,7 +28,12 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.TransportException;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.RefUpdate;
+import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.transport.PushResult;
+import org.eclipse.jgit.transport.RefLeaseSpec;
 import org.eclipse.jgit.transport.RemoteRefUpdate;
 
 /**
@@ -102,16 +107,81 @@ final class GitRemotes {
                     .setRemote(remote)
                     .setProgressMonitor(new JGitProgressMonitor(monitor));
             if (request.forceWithLease()) {
-                // Lease semantics: refuse if the remote moved since our last fetch, which
-                // is the whole point of --force-with-lease over a blind --force.
-                push.setForce(true).setRefLeaseSpecs(List.of());
+                push.setForce(true).setRefLeaseSpecs(leaseFor(git.getRepository(), remote));
             }
             if (request.pushTags()) {
                 push.setPushTags();
             }
-            checkRejections(push.call());
+            Iterable<PushResult> results = push.call();
+            checkRejections(results);
+            updateTrackingRefs(git.getRepository(), remote, results);
         } catch (GitAPIException e) {
             throw translate(e, monitor, target, "push");
+        } catch (IOException e) {
+            throw new VcsException("Pushed, but could not record the new remote state", e);
+        }
+    }
+
+    /**
+     * Moves {@code refs/remotes/<remote>/<branch>} to what we just pushed.
+     *
+     * <p>Plain {@code git push} does this and JGit does not, which leaves the app
+     * believing the remote is wherever it was at the last fetch. Two things break as a
+     * result: the branch list shows a stale {@code origin/...}, and a later
+     * force-with-lease is refused by the user's own push.</p>
+     */
+    private static void updateTrackingRefs(
+            Repository repository, String remote, Iterable<PushResult> results)
+            throws IOException {
+        for (PushResult result : results) {
+            for (RemoteRefUpdate update : result.getRemoteUpdates()) {
+                if (update.getStatus() != RemoteRefUpdate.Status.OK
+                        || update.getNewObjectId() == null
+                        || !update.getRemoteName().startsWith(Constants.R_HEADS)) {
+                    continue;
+                }
+                String branch = update.getRemoteName().substring(Constants.R_HEADS.length());
+                RefUpdate tracking =
+                        repository.updateRef(Constants.R_REMOTES + remote + "/" + branch);
+                tracking.setNewObjectId(update.getNewObjectId());
+                // A force push moves the ref backwards, which is not fast-forward.
+                tracking.setForceUpdate(true);
+                tracking.update();
+            }
+        }
+    }
+
+    /**
+     * Builds the lease that makes {@code --force-with-lease} mean anything.
+     *
+     * <p>The lease says "overwrite the remote branch only if it still points where I last
+     * saw it". That last-seen value is exactly the remote-tracking ref, so a colleague who
+     * pushed after our last fetch causes the push to be rejected instead of erasing their
+     * work. An empty lease list is not a weaker version of this — it is a plain
+     * {@code --force}, which is the thing the option exists to avoid.</p>
+     *
+     * @throws VcsPreconditionException if there is nothing to lease against, since forcing
+     *                                  blindly is never what the user asked for
+     */
+    private static List<RefLeaseSpec> leaseFor(Repository repository, String remote) {
+        try {
+            String branch = repository.getBranch();
+            if (branch == null || ObjectId.isId(branch)) {
+                throw new VcsPreconditionException(
+                        "Cannot force-with-lease from a detached HEAD: check out a branch first");
+            }
+            Ref tracking = repository.findRef(
+                    Constants.R_REMOTES + remote + "/" + branch);
+            if (tracking == null) {
+                // Never fetched this branch, so we have no idea what is on the remote and
+                // no basis for claiming our version supersedes it.
+                throw new VcsPreconditionException("No remote-tracking ref for " + remote + "/"
+                        + branch + "; fetch before forcing");
+            }
+            return List.of(new RefLeaseSpec(
+                    Constants.R_HEADS + branch, tracking.getObjectId().name()));
+        } catch (IOException e) {
+            throw new VcsException("Could not read the remote-tracking state of " + remote, e);
         }
     }
 

@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.RepositoryCache;
 import org.eclipse.jgit.util.FileUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -251,6 +252,22 @@ class GitRemotesTest {
     }
 
     @Test
+    void push_movesTheRemoteTrackingRefLikePlainGitDoes() throws Exception {
+        commitFile(clone, cloneDir, "pushed.txt", "pushed\n");
+
+        remotes.push(clone, new PushRequest(null, false, false), monitor);
+
+        // JGit leaves this behind, so without our own update the branch list keeps
+        // showing a stale origin/... and force-with-lease trips over the user's own push.
+        try (Git git = Git.open(cloneDir.toFile())) {
+            String branch = git.getRepository().getBranch();
+            assertEquals(
+                    git.getRepository().resolve(Constants.HEAD),
+                    git.getRepository().resolve(Constants.R_REMOTES + "origin/" + branch));
+        }
+    }
+
+    @Test
     void push_reportsARejectionRatherThanSucceedingSilently() throws Exception {
         // Someone else pushed first, so our history is behind: Git refuses to overwrite.
         pushFromAnotherWorkingCopy("theirs.txt", "theirs\n");
@@ -267,13 +284,44 @@ class GitRemotesTest {
     }
 
     @Test
-    void push_forceWithLeaseOverwritesADivergedRemote() throws Exception {
+    void push_forceWithLeaseRefusesWhenSomeoneElsePushedFirst() throws Exception {
+        // The colleague's commit arrived after our last fetch, so our copy of the remote
+        // is stale. Overwriting here would erase their work without anyone noticing —
+        // which is exactly the case --force-with-lease exists to catch.
         pushFromAnotherWorkingCopy("theirs.txt", "theirs\n");
         commitFile(clone, cloneDir, "mine.txt", "mine\n");
 
+        assertThrows(VcsPreconditionException.class,
+                () -> remotes.push(clone, new PushRequest(null, true, false), monitor));
+
+        assertTrue(remoteHasFile("theirs.txt"), "their commit must survive");
+        assertFalse(remoteHasFile("mine.txt"));
+    }
+
+    @Test
+    void push_forceWithLeaseRewritesWhenWeHaveSeenTheRemoteState() throws Exception {
+        // Nobody else touched it since our clone, so the lease holds and rewriting our
+        // own history is allowed.
+        commitFile(clone, cloneDir, "first.txt", "first\n");
+        remotes.push(clone, new PushRequest(null, false, false), monitor);
+        amendLastCommit(cloneDir, "amended\n");
+
         remotes.push(clone, new PushRequest(null, true, false), monitor);
 
-        assertTrue(remoteHasFile("mine.txt"));
+        assertEquals("amended", remoteFileContent("first.txt"));
+    }
+
+    @Test
+    void push_forceWithLeaseRefusesWithoutARemoteTrackingRef() throws Exception {
+        // A branch we have never fetched gives no basis for claiming ours supersedes it,
+        // so falling back to a plain force would be the dangerous reading.
+        try (Git git = Git.open(cloneDir.toFile())) {
+            git.checkout().setCreateBranch(true).setName("never-fetched").call();
+        }
+        commitFile(clone, cloneDir, "new.txt", "new\n");
+
+        assertThrows(VcsPreconditionException.class,
+                () -> remotes.push(clone, new PushRequest(null, true, false), monitor));
     }
 
     @Test
@@ -314,12 +362,30 @@ class GitRemotesTest {
 
     /** Reads the remote's tree directly, since a bare repo has no working copy. */
     private boolean remoteHasFile(String name) throws Exception {
+        return Files.exists(freshCheckout().resolve(name));
+    }
+
+    /** Trimmed: the verification clone checks out under the machine's own autocrlf. */
+    private String remoteFileContent(String name) throws Exception {
+        return Files.readString(freshCheckout().resolve(name)).trim();
+    }
+
+    private Path freshCheckout() throws Exception {
         Path checkout = root.resolve("verify-" + System.nanoTime());
         Git.cloneRepository()
                 .setURI(remoteDir.toUri().toString())
                 .setDirectory(checkout.toFile())
                 .call().close();
-        return Files.exists(checkout.resolve(name));
+        return checkout;
+    }
+
+    /** Rewrites the last commit, which is the honest reason to force-push at all. */
+    private void amendLastCommit(Path dir, String content) throws Exception {
+        Files.writeString(dir.resolve("first.txt"), content);
+        try (Git git = Git.open(dir.toFile())) {
+            git.add().addFilepattern("first.txt").call();
+            git.commit().setAmend(true).setMessage("amended").call();
+        }
     }
 
     /** Simulates a colleague pushing to the same remote. */
