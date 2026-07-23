@@ -123,6 +123,10 @@
   "error.validation": "The request was rejected",
   "error.notFound": "Not found",
   "error.capabilityNotSupported": "This VCS does not support that operation",
+  "error.conflict": "The repository state blocks this",
+  "error.mergeConflict": "The merge stopped because of conflicts",
+  "error.authRequired": "Authentication is required",
+  "error.remoteUnreachable": "Could not reach the remote",
   "error.network": "Cannot reach the backend",
   "error.internal": "A server error occurred",
   "error.unknown": "Something went wrong"

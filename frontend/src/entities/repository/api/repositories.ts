@@ -22,6 +22,41 @@ interface CheckoutPayload {
 }
 
 /**
+ * Runs one of the remote commands.
+ *
+ * All three answer as soon as the work is queued. Progress arrives over SSE and
+ * the refreshed refs and file list follow from `operation.completed`, so there
+ * is nothing to do here beyond making the queue visible immediately.
+ */
+function useRemoteCommand<T>(command: 'fetch' | 'pull' | 'push') {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, ...body}: T & {repositoryId: string}) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/${command}`, {
+                method: 'POST',
+                body,
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/** Downloads new revisions without touching the working tree. */
+export function useFetch() {
+    return useRemoteCommand<{prune?: boolean}>('fetch')
+}
+
+/** Fetch plus integrate into the current branch. */
+export function usePull() {
+    return useRemoteCommand<{strategy?: 'MERGE' | 'REBASE'}>('pull')
+}
+
+/** Uploads local commits. */
+export function usePush() {
+    return useRemoteCommand<{forceWithLease?: boolean; tags?: boolean}>('push')
+}
+
+/**
  * Switches the working tree to another ref.
  *
  * Answers as soon as the work is queued, not when it finishes: the refreshed

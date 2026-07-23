@@ -23,13 +23,15 @@ const initialUiState = useUiStore.getState()
 
 beforeEach(() => {
   useUiStore.setState(initialUiState, true)
-  // URL-aware stub: the shell now queries both /health and /repositories,
-  // which return different shapes.
+  // URL-aware stub: the shell queries several endpoints that return different
+  // shapes, and handing a list-shaped caller an object crashes it.
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : String(input)
-      const body = url.includes('/repositories') ? [] : { status: 'UP' }
+      const listEndpoint =
+        url.includes('/repositories') || url.includes('/operations')
+      const body = listEndpoint ? [] : { status: 'UP' }
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,

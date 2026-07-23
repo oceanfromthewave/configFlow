@@ -12,6 +12,10 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   VALIDATION_ERROR: 'error.validation',
   NOT_FOUND: 'error.notFound',
   CAPABILITY_NOT_SUPPORTED: 'error.capabilityNotSupported',
+  CONFLICT: 'error.conflict',
+  MERGE_CONFLICT: 'error.mergeConflict',
+  VCS_AUTH_REQUIRED: 'error.authRequired',
+  VCS_NETWORK_ERROR: 'error.remoteUnreachable',
   NETWORK_ERROR: 'error.network',
   INTERNAL_ERROR: 'error.internal',
 }
