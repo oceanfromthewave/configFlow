@@ -31,11 +31,18 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,12 +59,16 @@ class CloneServiceTest {
     Path root;
 
     private CloneService serviceFor(VcsProvider... providers) {
+        return serviceOn(Runnable::run, providers);
+    }
+
+    private CloneService serviceOn(Executor executor, VcsProvider... providers) {
         DefaultVcsProviderRegistry registry = new DefaultVcsProviderRegistry(List.of(providers));
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         return new CloneService(
                 registry,
                 new RepositoryService(store, registry, clock),
-                new OperationQueue(history, events, clock, Runnable::run),
+                new OperationQueue(history, events, clock, executor),
                 events);
     }
 
@@ -170,12 +181,67 @@ class CloneServiceTest {
         assertTrue(events.registered.isEmpty());
     }
 
+    @Test
+    void clone_intoTheSameTargetRunsOneAtATime() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            CloneService service = serviceOn(pool, provider);
+            Path target = root.resolve("contested");
+            events.completions = new CountDownLatch(3);
+
+            // The emptiness check in clone() runs on the request thread, so all three get
+            // past it before any of them starts transferring. Only the queue keeps them
+            // apart after that.
+            List<Operation> submitted = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                submitted.add(service.clone("https://host/o/repo.git", target, VcsType.GIT, null));
+            }
+
+            assertTrue(events.completions.await(10, TimeUnit.SECONDS));
+            assertEquals(1, provider.peakConcurrent.get(),
+                    "two clones into one directory would write over each other");
+
+            // The losers re-check the directory once they hold the chain, so they stop
+            // with a plain "not empty" instead of tearing up what the winner wrote.
+            List<OperationState> states = submitted.stream()
+                    .map(operation -> history.saved.get(operation.id()).state())
+                    .toList();
+            assertEquals(1, states.stream().filter(s -> s == OperationState.SUCCEEDED).count());
+            assertEquals(2, states.stream().filter(s -> s == OperationState.FAILED).count());
+            assertEquals(1, store.findAll().size(), "one clone, one registration");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void clone_thatCannotBeRegisteredKeepsWhatItAlreadyDownloaded() {
+        CloneService service = serviceFor(provider);
+        Path target = root.resolve("taken");
+        // The one failure register reliably produces: that path is already in the
+        // workspace. Deleting here would destroy the working copy it points at.
+        store.save(Repository.register("taken", target.toAbsolutePath().normalize(),
+                null, VcsType.GIT, NOW));
+
+        Operation operation = service.clone("https://host/o/repo.git", target, VcsType.GIT, null);
+
+        assertEquals(OperationState.FAILED, history.saved.get(operation.id()).state());
+        assertTrue(Files.exists(target.resolve("cloned.txt")),
+                "the transfer succeeded, so its result must survive the bookkeeping failure");
+        String message = history.saved.get(operation.id()).errorMessage();
+        assertTrue(message.contains(target.toString()), "the message must name the path: " + message);
+    }
+
     // --- fakes -----------------------------------------------------------
 
     private static final class FakeCloneProvider implements VcsProvider, RepositoryOperations {
 
-        private CloneRequest lastRequest;
-        private RuntimeException failWith;
+        private final AtomicInteger concurrent = new AtomicInteger();
+        private final AtomicInteger peakConcurrent = new AtomicInteger();
+
+        private volatile CloneRequest lastRequest;
+        private volatile RuntimeException failWith;
+        private volatile Runnable onClone;
 
         @Override
         public VcsType type() {
@@ -202,9 +268,25 @@ class CloneServiceTest {
             if (failWith != null) {
                 throw failWith;
             }
-            lastRequest = request;
-            monitor.onProgress(new OperationProgress(50, "Receiving objects", null));
-            return new RepositoryHandle(request.localPath(), VcsType.GIT);
+            peakConcurrent.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
+            try {
+                lastRequest = request;
+                monitor.onProgress(new OperationProgress(50, "Receiving objects", null));
+                // A real clone leaves something behind; tests about cleanup need that.
+                try {
+                    Files.createDirectories(request.localPath());
+                    Files.writeString(request.localPath().resolve("cloned.txt"), "content");
+                    Thread.sleep(15);
+                } catch (IOException | InterruptedException e) {
+                    throw new IllegalStateException(e);
+                }
+                return new RepositoryHandle(request.localPath(), VcsType.GIT);
+            } finally {
+                concurrent.decrementAndGet();
+                if (onClone != null) {
+                    onClone.run();
+                }
+            }
         }
 
         @Override
@@ -239,7 +321,11 @@ class CloneServiceTest {
 
     private static final class RecordingEvents implements OperationEvents {
 
-        private final List<RepositoryId> registered = new ArrayList<>();
+        private final List<RepositoryId> registered =
+                Collections.synchronizedList(new ArrayList<>());
+
+        /** Set by tests that run off the calling thread and need to wait for the end. */
+        private volatile CountDownLatch completions;
 
         @Override
         public void progress(OperationId id, OperationProgress progress) {
@@ -247,6 +333,9 @@ class CloneServiceTest {
 
         @Override
         public void completed(Operation operation) {
+            if (completions != null) {
+                completions.countDown();
+            }
         }
 
         @Override
@@ -270,7 +359,8 @@ class CloneServiceTest {
 
     private static final class InMemoryHistory implements OperationHistoryStore {
 
-        private final Map<OperationId, Operation> saved = new LinkedHashMap<>();
+        private final Map<OperationId, Operation> saved =
+                Collections.synchronizedMap(new LinkedHashMap<>());
 
         @Override
         public void save(Operation operation) {
@@ -290,7 +380,8 @@ class CloneServiceTest {
 
     private static final class InMemoryRepositoryStore implements RepositoryStore {
 
-        private final Map<RepositoryId, Repository> byId = new LinkedHashMap<>();
+        private final Map<RepositoryId, Repository> byId =
+                Collections.synchronizedMap(new LinkedHashMap<>());
 
         @Override
         public void save(Repository repository) {

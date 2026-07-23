@@ -71,10 +71,19 @@ describe('repositoryNameFromUrl', () => {
     expect(repositoryNameFromUrl('https://host/owner/repo/')).toBe('repo')
   })
 
+  it('drops a query or fragment instead of putting it in a folder name', () => {
+    // `?` and `#` are not legal in a Windows path, and they also hide the `.git`
+    // suffix from the stripper, so the folder would end up named `repo.git?ref=main`.
+    expect(repositoryNameFromUrl('https://host/owner/repo.git?ref=main')).toBe('repo')
+    expect(repositoryNameFromUrl('https://host/owner/repo#readme')).toBe('repo')
+    expect(repositoryNameFromUrl('https://host/owner/repo/?ref=main')).toBe('repo')
+  })
+
   it('gives up rather than guessing', () => {
     expect(repositoryNameFromUrl('')).toBeNull()
     expect(repositoryNameFromUrl('   ')).toBeNull()
     expect(repositoryNameFromUrl('.git')).toBeNull()
+    expect(repositoryNameFromUrl('?ref=main')).toBeNull()
   })
 })
 

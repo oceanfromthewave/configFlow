@@ -89,7 +89,10 @@ export function useClone() {
  * and returns null when there is nothing sensible to derive.
  */
 export function repositoryNameFromUrl(url: string): string | null {
-    const trimmed = url.trim().replace(/\/+$/, '')
+    // Drop any query and fragment before anything else. `repo.git?ref=main` would
+    // otherwise keep its `.git` and carry a `?` into the directory name, which is not
+    // a legal path character on Windows.
+    const trimmed = url.trim().split(/[?#]/)[0].replace(/\/+$/, '')
     if (trimmed === '') return null
     const lastSegment = trimmed.split(/[/:]/).pop()
     if (!lastSegment) return null

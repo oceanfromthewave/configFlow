@@ -63,7 +63,11 @@ public final class OperationQueue {
 
     private final Map<OperationId, LiveOperation> live = new ConcurrentHashMap<>();
 
-    /** Tail of each repository's chain. Bounded by the number of registered repositories. */
+    /**
+     * Tail of each chain, keyed by the resource its operations share — see
+     * {@link #chainKeyFor}. Entries are never removed: one per repository, plus one per
+     * clone target, which over a session is a handful of completed futures.
+     */
     private final Map<String, CompletableFuture<Void>> tails = new ConcurrentHashMap<>();
 
     /** Guards admission against shutdown; held only for map work, never while a task runs. */
@@ -89,6 +93,24 @@ public final class OperationQueue {
      *                     repository yet, such as a clone into a new directory
      */
     public Operation submit(RepositoryId repositoryId, OperationType type, OperationTask task) {
+        return submit(repositoryId, null, type, task);
+    }
+
+    /**
+     * Accepts work whose exclusive resource is not a registered repository.
+     *
+     * <p>A clone owns its target directory before there is any repository to name it by,
+     * and two clones into one directory overwrite each other exactly the way two commands
+     * on one working copy do. Naming the directory here serialises them.</p>
+     *
+     * @param resourceKey what this work must not run alongside; {@code null} means it
+     *                    shares nothing and may start straight away
+     */
+    public Operation submit(
+            RepositoryId repositoryId,
+            String resourceKey,
+            OperationType type,
+            OperationTask task) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(task, "task");
         LiveOperation operation = new LiveOperation(OperationId.newId(), repositoryId, type);
@@ -102,12 +124,7 @@ public final class OperationQueue {
             }
             live.put(operation.id, operation);
 
-            // Work with no repository — a clone into a new directory — has nothing to
-            // serialise against, so each gets its own chain rather than queueing behind
-            // unrelated clones.
-            String chainKey = repositoryId == null
-                    ? "clone:" + operation.id.asString()
-                    : repositoryId.asString();
+            String chainKey = chainKeyFor(operation, repositoryId, resourceKey);
             tails.compute(chainKey, (key, tail) -> {
                 CompletableFuture<Void> previous =
                         tail == null ? CompletableFuture.completedFuture(null) : tail;
@@ -119,6 +136,25 @@ public final class OperationQueue {
         }
 
         return operation.snapshot();
+    }
+
+    /**
+     * What an operation serialises on: its repository, a named resource, or nothing.
+     *
+     * <p>The prefixes keep the namespaces apart, so a directory named like a repository id
+     * cannot end up sharing that repository's chain.</p>
+     */
+    private static String chainKeyFor(
+            LiveOperation operation, RepositoryId repositoryId, String resourceKey) {
+        if (repositoryId != null) {
+            return "repo:" + repositoryId.asString();
+        }
+        if (resourceKey != null) {
+            return "resource:" + resourceKey;
+        }
+        // Shares nothing, so it gets its own chain rather than queueing behind unrelated
+        // work that happens to also have no repository.
+        return "op:" + operation.id.asString();
     }
 
     /**
