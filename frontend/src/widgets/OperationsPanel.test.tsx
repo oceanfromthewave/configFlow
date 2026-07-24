@@ -124,10 +124,15 @@ describe('OperationsPanel', () => {
     renderPanel()
 
     expect(await screen.findByText('실패')).toBeInTheDocument()
-    expect(
-      screen.getByText('저장소 상태 때문에 실행할 수 없습니다'),
-    ).toBeInTheDocument()
-    // JGit's English, and it names a path. It belongs in the tooltip, not the panel.
+
+    // JGit's English names a path, so it moves to the tooltip rather than being
+    // dropped: asserting only that the panel does not show it would also pass if
+    // the detail were thrown away entirely.
+    const failure = screen.getByText('저장소 상태 때문에 실행할 수 없습니다')
+    expect(failure).toHaveAttribute(
+      'title',
+      'Local changes would be overwritten by checkout: src/app.ts',
+    )
     expect(
       screen.queryByText(/Local changes would be overwritten/),
     ).not.toBeInTheDocument()
