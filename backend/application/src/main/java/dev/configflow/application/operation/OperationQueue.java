@@ -4,6 +4,8 @@ import dev.configflow.domain.operation.ConsoleLevel;
 import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationCancelledException;
 import dev.configflow.domain.operation.OperationEvents;
+import dev.configflow.domain.operation.OperationFailure;
+import dev.configflow.domain.operation.OperationFailures;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationProgress;
@@ -221,8 +223,9 @@ public final class OperationQueue {
             // Ask first: a task still running past the grace period may yet stop on its
             // own, and terminate() below only wins if it has not finished already.
             operation.cancelRequested.set(true);
-            terminate(operation, OperationState.CANCELLED,
-                    "The application shut down before this operation finished");
+            terminate(operation, OperationState.CANCELLED, OperationFailure.of(
+                    OperationFailures.CANCELLED,
+                    "The application shut down before this operation finished"));
         }
     }
 
@@ -286,7 +289,7 @@ public final class OperationQueue {
             // Throwable, not Exception: an Error would otherwise leave the operation
             // stuck in RUNNING for the rest of the session, and anything watching it
             // would wait forever.
-            terminate(operation, OperationState.FAILED, describe(e));
+            terminate(operation, OperationState.FAILED, OperationFailures.classify(e));
             if (e instanceof Error) {
                 // Rethrown rather than swallowed, so the future completes exceptionally
                 // and the failure is not disguised as an orderly finish. The chain
@@ -296,7 +299,8 @@ public final class OperationQueue {
         }
     }
 
-    private void terminate(LiveOperation operation, OperationState state, String errorMessage) {
+    private void terminate(
+            LiveOperation operation, OperationState state, OperationFailure failure) {
         if (!operation.settle()) {
             // Someone got here first. Shutdown and a task finishing late both end up
             // calling this, and the second one must not overwrite the recorded outcome or
@@ -305,14 +309,15 @@ public final class OperationQueue {
         }
         operation.state = state;
         operation.finishedAt = clock.instant();
-        operation.errorMessage = errorMessage;
+        operation.failure = failure;
 
         try {
             history.save(operation.snapshot());
         } catch (RuntimeException e) {
             // Archiving is not the operation's job: losing the record must not turn a
             // successful checkout into a failure. Surface it on the console instead.
-            operation.addLogLine("Could not archive this operation: " + describe(e));
+            operation.addLogLine("Could not archive this operation: "
+                    + OperationFailures.classify(e).message());
         }
 
         events.completed(operation.snapshot());
@@ -353,13 +358,6 @@ public final class OperationQueue {
         return operation.startedAt() != null ? operation.startedAt() : Instant.MAX;
     }
 
-    private static String describe(Throwable e) {
-        String message = e.getMessage();
-        return message != null && !message.isBlank()
-                ? message
-                : e.getClass().getSimpleName();
-    }
-
     // --- live state ------------------------------------------------------
 
     /**
@@ -384,7 +382,7 @@ public final class OperationQueue {
         private volatile OperationProgress progress;
         private volatile Instant startedAt;
         private volatile Instant finishedAt;
-        private volatile String errorMessage;
+        private volatile OperationFailure failure;
 
         private LiveOperation(OperationId id, RepositoryId repositoryId, OperationType type) {
             this.id = id;
@@ -416,7 +414,7 @@ public final class OperationQueue {
             synchronized (logLines) {
                 return new Operation(
                         id, repositoryId, type, state, progress,
-                        startedAt, finishedAt, errorMessage, List.copyOf(logLines));
+                        startedAt, finishedAt, failure, List.copyOf(logLines));
             }
         }
     }

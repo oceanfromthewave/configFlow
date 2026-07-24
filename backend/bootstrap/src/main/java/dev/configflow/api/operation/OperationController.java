@@ -2,6 +2,7 @@ package dev.configflow.api.operation;
 
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.domain.operation.Operation;
+import dev.configflow.domain.operation.OperationFailure;
 import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.operation.OperationState;
@@ -9,6 +10,7 @@ import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,6 +38,19 @@ public class OperationController {
         }
     }
 
+    /**
+     * Why an operation failed, shaped like the {@code error} of an
+     * {@code operation.completed} event so a client has one thing to read either way.
+     */
+    public record FailureResponse(String code, String detail, Map<String, String> context) {
+
+        static FailureResponse from(OperationFailure failure) {
+            return failure == null
+                    ? null
+                    : new FailureResponse(failure.code(), failure.message(), failure.context());
+        }
+    }
+
     /** One operation as seen by the client. */
     public record OperationResponse(
             String operationId,
@@ -45,7 +60,7 @@ public class OperationController {
             ProgressResponse progress,
             Instant startedAt,
             Instant finishedAt,
-            String errorMessage,
+            FailureResponse error,
             List<String> logLines) {
 
         static OperationResponse from(Operation operation) {
@@ -58,7 +73,7 @@ public class OperationController {
                     ProgressResponse.from(operation.progress()),
                     operation.startedAt(),
                     operation.finishedAt(),
-                    operation.errorMessage(),
+                    FailureResponse.from(operation.failure()),
                     operation.logLines());
         }
     }

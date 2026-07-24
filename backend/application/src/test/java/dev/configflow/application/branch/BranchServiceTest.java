@@ -124,7 +124,8 @@ class BranchServiceTest {
 
         // Accepted work reports its outcome through the operation, not the submit call.
         assertEquals(OperationState.FAILED, history.saved.get(operation.id()).state());
-        assertEquals("index.lock exists", history.saved.get(operation.id()).errorMessage());
+        assertEquals("index.lock exists",
+                history.saved.get(operation.id()).failure().message());
     }
 
     @Test

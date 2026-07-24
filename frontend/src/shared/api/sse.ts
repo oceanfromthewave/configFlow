@@ -15,10 +15,13 @@ export interface SseEventMap {
     operationId: string
     state: 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
     error: {
+      /** Stable name of the cause; the only part safe to branch on. */
       code: string
       title?: string
+      /** Server-authored English. Show the translated `code` instead. */
       detail?: string
-      context?: Record<string, unknown>
+      /** What answering it needs: `host` and `protocol` for VCS_AUTH_REQUIRED. */
+      context?: Record<string, string>
     } | null
     result?: Record<string, unknown>
   }

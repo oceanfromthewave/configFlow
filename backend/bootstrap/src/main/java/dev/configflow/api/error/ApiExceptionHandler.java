@@ -4,6 +4,7 @@ import dev.configflow.domain.vcs.exception.MergeConflictException;
 import dev.configflow.domain.vcs.exception.VcsAuthenticationRequiredException;
 import dev.configflow.domain.vcs.exception.VcsNetworkException;
 import dev.configflow.domain.vcs.exception.VcsPreconditionException;
+import dev.configflow.domain.operation.OperationFailures;
 import java.net.URI;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -21,7 +22,10 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * Maps exceptions to RFC 9457 Problem Details responses (docs/07 §1).
  *
  * <p>Every body carries a stable machine-readable {@code code} property the frontend
- * branches on, plus a {@code urn:configflow:error:*} type URI.</p>
+ * branches on, plus a {@code urn:configflow:error:*} type URI. The codes come from
+ * {@link OperationFailures} rather than literals here, because the same failure also
+ * reaches the client on the event stream when it happens to queued work — one
+ * vocabulary, or the frontend needs two branches for one cause.</p>
  */
 @RestControllerAdvice
 public class ApiExceptionHandler
@@ -32,7 +36,7 @@ public class ApiExceptionHandler
 	@ExceptionHandler(NoSuchElementException.class)
 	public ProblemDetail handleNotFound(NoSuchElementException e)
 	{
-		return problem(HttpStatus.NOT_FOUND, "not-found", "NOT_FOUND", "Resource not found", e.getMessage());
+		return problem(HttpStatus.NOT_FOUND, "not-found", OperationFailures.NOT_FOUND, "Resource not found", e.getMessage());
 	}
 
 	/**
@@ -42,19 +46,19 @@ public class ApiExceptionHandler
 	@ExceptionHandler({ HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class })
 	public ProblemDetail handleMalformedRequest(Exception e)
 	{
-		return problem(HttpStatus.BAD_REQUEST, "validation", "VALIDATION_ERROR", "Invalid request", "The request could not be read: " + e.getMessage());
+		return problem(HttpStatus.BAD_REQUEST, "validation", OperationFailures.VALIDATION_ERROR, "Invalid request", "The request could not be read: " + e.getMessage());
 	}
 
 	@ExceptionHandler(IllegalArgumentException.class)
 	public ProblemDetail handleBadRequest(IllegalArgumentException e)
 	{
-		return problem(HttpStatus.BAD_REQUEST, "validation", "VALIDATION_ERROR", "Invalid request", e.getMessage());
+		return problem(HttpStatus.BAD_REQUEST, "validation", OperationFailures.VALIDATION_ERROR, "Invalid request", e.getMessage());
 	}
 
 	@ExceptionHandler(UnsupportedOperationException.class)
 	public ProblemDetail handleCapabilityNotSupported(UnsupportedOperationException e)
 	{
-		return problem(HttpStatus.BAD_REQUEST, "capability-not-supported", "CAPABILITY_NOT_SUPPORTED", "Operation not supported", e.getMessage());
+		return problem(HttpStatus.BAD_REQUEST, "capability-not-supported", OperationFailures.CAPABILITY_NOT_SUPPORTED, "Operation not supported", e.getMessage());
 	}
 
 	/**
@@ -64,14 +68,14 @@ public class ApiExceptionHandler
 	@ExceptionHandler(VcsPreconditionException.class)
 	public ProblemDetail handleConflict(VcsPreconditionException e)
 	{
-		return problem(HttpStatus.CONFLICT, "conflict", "CONFLICT", "Repository state blocks this operation", e.getMessage());
+		return problem(HttpStatus.CONFLICT, "conflict", OperationFailures.CONFLICT, "Repository state blocks this operation", e.getMessage());
 	}
 
 	/** Content conflicts get their own code: the frontend routes them into the resolve flow rather than showing a plain error. */
 	@ExceptionHandler(MergeConflictException.class)
 	public ProblemDetail handleMergeConflict(MergeConflictException e)
 	{
-		ProblemDetail problem = problem(HttpStatus.CONFLICT, "merge-conflict", "MERGE_CONFLICT", "Merge stopped due to conflicts", e.getMessage());
+		ProblemDetail problem = problem(HttpStatus.CONFLICT, "merge-conflict", OperationFailures.MERGE_CONFLICT, "Merge stopped due to conflicts", e.getMessage());
 		problem.setProperty("conflictedPaths", e.conflictedPaths().stream().map(path -> path.toString().replace('\\', '/')).toList());
 		return problem;
 	}
@@ -84,7 +88,7 @@ public class ApiExceptionHandler
 	@ExceptionHandler(VcsAuthenticationRequiredException.class)
 	public ProblemDetail handleAuthRequired(VcsAuthenticationRequiredException e)
 	{
-		ProblemDetail problem = problem(HttpStatus.UNAUTHORIZED, "vcs-auth-required", "VCS_AUTH_REQUIRED", "Authentication required", e.getMessage());
+		ProblemDetail problem = problem(HttpStatus.UNAUTHORIZED, "vcs-auth-required", OperationFailures.VCS_AUTH_REQUIRED, "Authentication required", e.getMessage());
 		problem.setProperty("context", Map.of("host", e.host(), "protocol", e.protocol()));
 		return problem;
 	}
@@ -93,14 +97,14 @@ public class ApiExceptionHandler
 	@ExceptionHandler(VcsNetworkException.class)
 	public ProblemDetail handleNetwork(VcsNetworkException e)
 	{
-		return problem(HttpStatus.BAD_GATEWAY, "vcs-network", "VCS_NETWORK_ERROR", "Could not reach the remote", e.getMessage());
+		return problem(HttpStatus.BAD_GATEWAY, "vcs-network", OperationFailures.VCS_NETWORK_ERROR, "Could not reach the remote", e.getMessage());
 	}
 
 	@ExceptionHandler(Exception.class)
 	public ProblemDetail handleInternal(Exception e)
 	{
 		log.error("Unhandled exception in API request", e);
-		return problem(HttpStatus.INTERNAL_SERVER_ERROR, "internal", "INTERNAL_ERROR", "Internal server error", "An unexpected error occurred");
+		return problem(HttpStatus.INTERNAL_SERVER_ERROR, "internal", OperationFailures.INTERNAL_ERROR, "Internal server error", "An unexpected error occurred");
 	}
 
 	private static ProblemDetail problem(HttpStatus status, String typeSlug, String code, String title, String detail)

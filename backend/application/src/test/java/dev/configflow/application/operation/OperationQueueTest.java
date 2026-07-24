@@ -10,12 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.configflow.domain.operation.ConsoleLevel;
 import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationEvents;
+import dev.configflow.domain.operation.OperationFailure;
+import dev.configflow.domain.operation.OperationFailures;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
+import dev.configflow.domain.vcs.exception.VcsAuthenticationRequiredException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -80,7 +83,7 @@ class OperationQueueTest {
         assertEquals(OperationState.SUCCEEDED, finished.state());
         assertEquals(NOW, finished.startedAt());
         assertEquals(NOW, finished.finishedAt());
-        assertNull(finished.errorMessage());
+        assertNull(finished.failure());
         assertTrue(history.saved.containsKey(accepted.id()), "terminal state must be archived");
     }
 
@@ -114,7 +117,7 @@ class OperationQueueTest {
 
         Operation finished = queue.find(accepted.id()).orElseThrow();
         assertEquals(OperationState.FAILED, finished.state());
-        assertEquals("index.lock exists", finished.errorMessage());
+        assertEquals("index.lock exists", finished.failure().message());
         assertEquals(OperationState.FAILED, events.completed.get(0).state());
     }
 
@@ -127,7 +130,36 @@ class OperationQueueTest {
         });
 
         assertEquals("IllegalStateException",
-                queue.find(accepted.id()).orElseThrow().errorMessage());
+                queue.find(accepted.id()).orElseThrow().failure().message());
+    }
+
+    @Test
+    void aFailureKeepsItsNameAndWhatIsNeededToAnswerIt() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.FETCH, context -> {
+            throw new VcsAuthenticationRequiredException("github.com", "https", null);
+        });
+
+        // Everything the credential prompt needs used to stop here: the queue reduced the
+        // exception to its message and the host went with it.
+        OperationFailure failure = queue.find(accepted.id()).orElseThrow().failure();
+        assertEquals(OperationFailures.VCS_AUTH_REQUIRED, failure.code());
+        assertEquals("github.com", failure.context().get("host"));
+        assertEquals("https", failure.context().get("protocol"));
+    }
+
+    @Test
+    void anUnrecognisedFailureIsNamedAsSuchRatherThanGuessed() {
+        OperationQueue queue = inlineQueue();
+
+        Operation accepted = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+            throw new IllegalStateException("index.lock exists");
+        });
+
+        OperationFailure failure = queue.find(accepted.id()).orElseThrow().failure();
+        assertEquals(OperationFailures.INTERNAL_ERROR, failure.code());
+        assertTrue(failure.context().isEmpty());
     }
 
     @Test
@@ -142,7 +174,7 @@ class OperationQueueTest {
 
         Operation finished = queue.find(accepted.id()).orElseThrow();
         assertEquals(OperationState.FAILED, finished.state());
-        assertEquals("too deep", finished.errorMessage());
+        assertEquals("too deep", finished.failure().message());
         assertEquals(1, events.completed.size(), "clients must be told it ended");
     }
 

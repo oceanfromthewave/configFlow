@@ -228,7 +228,7 @@ class CloneServiceTest {
         assertEquals(OperationState.FAILED, history.saved.get(operation.id()).state());
         assertTrue(Files.exists(target.resolve("cloned.txt")),
                 "the transfer succeeded, so its result must survive the bookkeeping failure");
-        String message = history.saved.get(operation.id()).errorMessage();
+        String message = history.saved.get(operation.id()).failure().message();
         assertTrue(message.contains(target.toString()), "the message must name the path: " + message);
     }
 

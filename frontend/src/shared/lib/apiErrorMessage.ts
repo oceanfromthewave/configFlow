@@ -17,12 +17,25 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   VCS_AUTH_REQUIRED: 'error.authRequired',
   VCS_NETWORK_ERROR: 'error.remoteUnreachable',
   NETWORK_ERROR: 'error.network',
+  CANCELLED: 'error.cancelled',
   INTERNAL_ERROR: 'error.internal',
+}
+
+/**
+ * Translates a bare failure code.
+ *
+ * The same codes arrive two ways — as an HTTP problem, and on the event stream
+ * when queued work fails long after its request answered — so the lookup cannot
+ * require an {@link ApiError} to wrap it.
+ */
+export function errorCodeKey(code: string | null | undefined): MessageKey {
+  if (!code) return 'error.unknown'
+  return ERROR_KEYS[code] ?? 'error.unknown'
 }
 
 export function apiErrorKey(error: unknown): MessageKey {
   if (error instanceof ApiError) {
-    return ERROR_KEYS[error.code] ?? 'error.unknown'
+    return errorCodeKey(error.code)
   }
   return 'error.unknown'
 }

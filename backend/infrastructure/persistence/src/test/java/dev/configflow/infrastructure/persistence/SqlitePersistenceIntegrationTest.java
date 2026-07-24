@@ -2,9 +2,13 @@ package dev.configflow.infrastructure.persistence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.configflow.domain.operation.Operation;
+import dev.configflow.domain.operation.OperationFailure;
+import dev.configflow.domain.operation.OperationFailures;
+import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.Repository;
@@ -13,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -127,5 +132,78 @@ class SqlitePersistenceIntegrationTest {
         // ON DELETE CASCADE (requires enforced foreign keys)
         repositories.delete(repo.id());
         assertFalse(operations.findById(finished.id()).isPresent());
+    }
+
+    @Test
+    void anArchivedFailureKeepsItsName() {
+        SqliteOperationHistoryStore operations = new SqliteOperationHistoryStore(database);
+
+        // Without the code, the same auth failure looks like one thing while it is live
+        // on the event stream and like another once the panel reads it back.
+        Operation failed = failedOperation(new OperationFailure(
+                OperationFailures.VCS_AUTH_REQUIRED,
+                "Authentication required for https://github.com",
+                Map.of("host", "github.com", "protocol", "https")));
+        operations.save(failed);
+
+        OperationFailure stored = operations.findById(failed.id()).orElseThrow().failure();
+        assertEquals(OperationFailures.VCS_AUTH_REQUIRED, stored.code());
+        assertEquals("Authentication required for https://github.com", stored.message());
+    }
+
+    @Test
+    void anArchivedFailureDropsItsContextRatherThanPretendingToBeRetryable() {
+        SqliteOperationHistoryStore operations = new SqliteOperationHistoryStore(database);
+
+        Operation failed = failedOperation(new OperationFailure(
+                OperationFailures.VCS_AUTH_REQUIRED, "nope",
+                Map.of("host", "github.com", "protocol", "https")));
+        operations.save(failed);
+
+        // The context answers "how do I retry this", and this table cannot: it keeps no
+        // remote name, no pull strategy, no clone URL. Storing half an answer would put a
+        // retry button on a row that has nothing to retry with.
+        assertTrue(operations.findById(failed.id()).orElseThrow().failure().context().isEmpty());
+    }
+
+    @Test
+    void aRowArchivedBeforeCodesExistedIsNotGivenOne() throws Exception {
+        SqliteOperationHistoryStore operations = new SqliteOperationHistoryStore(database);
+        Operation failed = failedOperation(
+                OperationFailure.of(OperationFailures.VCS_NETWORK_ERROR, "unreachable"));
+        operations.save(failed);
+
+        // What an older build left behind: a message and no name.
+        try (var con = database.openConnection();
+                var ps = con.prepareStatement(
+                        "UPDATE operation_history SET error_code = NULL WHERE id = ?")) {
+            ps.setString(1, failed.id().asString());
+            ps.executeUpdate();
+        }
+
+        OperationFailure stored = operations.findById(failed.id()).orElseThrow().failure();
+        assertEquals(OperationFailures.UNKNOWN, stored.code(),
+                "calling it INTERNAL_ERROR would be a claim about a cause nobody recorded");
+        assertEquals("unreachable", stored.message());
+    }
+
+    @Test
+    void anOperationThatSucceededHasNoFailureToReadBack() {
+        SqliteOperationHistoryStore operations = new SqliteOperationHistoryStore(database);
+        Operation succeeded = new Operation(
+                OperationId.newId(), null, OperationType.FETCH, OperationState.SUCCEEDED,
+                null, Instant.parse("2026-07-02T10:00:00Z"),
+                Instant.parse("2026-07-02T10:00:05Z"), null, List.of());
+        operations.save(succeeded);
+
+        assertNull(operations.findById(succeeded.id()).orElseThrow().failure());
+    }
+
+    /** Repository-less on purpose: no row in {@code repository} to reference. */
+    private static Operation failedOperation(OperationFailure failure) {
+        return new Operation(
+                OperationId.newId(), null, OperationType.FETCH, OperationState.FAILED,
+                null, Instant.parse("2026-07-02T10:00:00Z"),
+                Instant.parse("2026-07-02T10:00:05Z"), failure, List.of());
     }
 }

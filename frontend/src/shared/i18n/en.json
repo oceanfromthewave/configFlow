@@ -140,6 +140,7 @@
   "error.authRequired": "Authentication is required",
   "error.remoteUnreachable": "Could not reach the remote",
   "error.network": "Cannot reach the backend",
+  "error.cancelled": "The operation was cancelled",
   "error.internal": "A server error occurred",
   "error.unknown": "Something went wrong"
 }
