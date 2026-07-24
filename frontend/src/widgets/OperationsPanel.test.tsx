@@ -56,7 +56,7 @@ function operation(overrides: object = {}) {
     progress: { percent: 40, phase: 'Switching', detail: 'main' },
     startedAt: '2026-01-01T00:00:00Z',
     finishedAt: null,
-    errorMessage: null,
+    error: null,
     logLines: [],
     ...overrides,
   }
@@ -109,12 +109,15 @@ describe('OperationsPanel', () => {
     expect(calls[0].url).toContain('/operations/op-42/cancel')
   })
 
-  it('surfaces the failure message of a failed operation', async () => {
+  it('translates the failure rather than printing what the server said', async () => {
     stubOperations([
       operation({
         state: 'FAILED',
         progress: null,
-        errorMessage: 'Local changes would be overwritten',
+        error: {
+          code: 'CONFLICT',
+          detail: 'Local changes would be overwritten by checkout: src/app.ts',
+        },
       }),
     ])
 
@@ -122,8 +125,44 @@ describe('OperationsPanel', () => {
 
     expect(await screen.findByText('실패')).toBeInTheDocument()
     expect(
-      screen.getByText('Local changes would be overwritten'),
+      screen.getByText('저장소 상태 때문에 실행할 수 없습니다'),
     ).toBeInTheDocument()
+    // JGit's English, and it names a path. It belongs in the tooltip, not the panel.
+    expect(
+      screen.queryByText(/Local changes would be overwritten/),
+    ).not.toBeInTheDocument()
+  })
+
+  it('names the remote that rejected the credentials', async () => {
+    stubOperations([
+      operation({
+        type: 'OTHER',
+        state: 'FAILED',
+        progress: null,
+        error: {
+          code: 'VCS_AUTH_REQUIRED',
+          detail: 'Authentication required for https://github.com',
+          context: { host: 'github.com', protocol: 'https' },
+        },
+      }),
+    ])
+
+    renderPanel()
+
+    // "Authentication is required" alone leaves the user guessing which remote,
+    // and a repository can have several.
+    expect(
+      await screen.findByText('인증이 필요합니다 · https://github.com'),
+    ).toBeInTheDocument()
+  })
+
+  it('says nothing about an operation that did not fail', async () => {
+    stubOperations([operation({ state: 'SUCCEEDED', progress: null })])
+
+    renderPanel()
+
+    expect(await screen.findByText('완료')).toBeInTheDocument()
+    expect(screen.queryByText(/오류|실패했/)).not.toBeInTheDocument()
   })
 
   it('falls back to a generic label for an unnamed operation type', async () => {

@@ -36,6 +36,21 @@ export interface OperationProgress {
   detail?: string | null
 }
 
+/**
+ * Why an operation failed, shaped like the `error` of an `operation.completed`
+ * event so both paths read the same.
+ *
+ * `code` is the contract; `detail` is server-authored English kept for the
+ * console and for a title attribute, never for the visible message.
+ * `context` carries what answering the failure needs — for
+ * `VCS_AUTH_REQUIRED`, the `host` and `protocol` to ask credentials for.
+ */
+export interface OperationFailure {
+  code: string
+  detail?: string | null
+  context?: Record<string, string>
+}
+
 export interface Operation {
   operationId: string
   repositoryId?: string | null
@@ -44,7 +59,7 @@ export interface Operation {
   progress?: OperationProgress | null
   startedAt?: string | null
   finishedAt?: string | null
-  errorMessage?: string | null
+  error?: OperationFailure | null
   logLines: string[]
 }
 

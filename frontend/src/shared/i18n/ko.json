@@ -140,6 +140,7 @@
   "error.authRequired": "인증이 필요합니다",
   "error.remoteUnreachable": "원격 저장소에 연결할 수 없습니다",
   "error.network": "백엔드에 연결할 수 없습니다",
+  "error.cancelled": "작업이 취소되었습니다",
   "error.internal": "서버 오류가 발생했습니다",
   "error.unknown": "알 수 없는 오류가 발생했습니다"
 }

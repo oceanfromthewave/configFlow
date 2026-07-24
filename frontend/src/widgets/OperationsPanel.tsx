@@ -4,13 +4,14 @@ import {
 } from '@/entities/operation/api/operations'
 import type {
   Operation,
+  OperationFailure,
   OperationState,
   OperationType,
 } from '@/entities/operation/model/types'
 import { isTerminal } from '@/entities/operation/model/types'
 import { useT } from '@/shared/i18n'
 import type { MessageKey } from '@/shared/i18n'
-import { apiErrorKey } from '@/shared/lib/apiErrorMessage'
+import { apiErrorKey, errorCodeKey } from '@/shared/lib/apiErrorMessage'
 import { useUiStore } from '@/shared/lib/uiStore'
 import { Badge, Button, Spinner } from '@/shared/ui'
 import type { BadgeVariant } from '@/shared/ui'
@@ -36,6 +37,17 @@ function typeKey(type: OperationType): MessageKey {
   return (NAMED_TYPES.includes(type)
     ? `operations.type${type}`
     : 'operations.typeOTHER') as MessageKey
+}
+
+/**
+ * `protocol://host` for an auth failure, otherwise nothing.
+ *
+ * "Authentication is required" on its own leaves the user guessing which remote
+ * rejected them, and a repository can have several.
+ */
+function authTarget(failure: OperationFailure): string | null {
+  const { host, protocol } = failure.context ?? {}
+  return host ? `${protocol ? `${protocol}://` : ''}${host}` : null
 }
 
 function OperationRow({ operation }: { operation: Operation }) {
@@ -75,8 +87,16 @@ function OperationRow({ operation }: { operation: Operation }) {
         ) : null}
       </div>
 
-      {operation.errorMessage ? (
-        <p className="px-1 text-[11px] text-vcs-deleted">{operation.errorMessage}</p>
+      {operation.error ? (
+        // The code decides what the user reads. `detail` is JGit's English and
+        // often names an absolute path, so it stays in the tooltip.
+        <p
+          className="px-1 text-[11px] text-vcs-deleted"
+          title={operation.error.detail ?? undefined}
+        >
+          {t(errorCodeKey(operation.error.code))}
+          {authTarget(operation.error) ? ` · ${authTarget(operation.error)}` : ''}
+        </p>
       ) : null}
     </li>
   )

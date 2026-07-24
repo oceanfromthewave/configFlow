@@ -20,7 +20,7 @@ import java.util.Objects;
  * @param progress     latest progress report, may be {@code null} before start
  * @param startedAt    when execution started, {@code null} while queued
  * @param finishedAt   when a terminal state was reached, {@code null} until then
- * @param errorMessage failure message when {@code state == FAILED}
+ * @param failure      why it did not succeed, {@code null} when it did - or when the user cancelled it deliberately, witch needs no explanation
  * @param logLines     console log lines (executed commands and their output)
  */
 public record Operation(
@@ -31,7 +31,7 @@ public record Operation(
         OperationProgress progress,
         Instant startedAt,
         Instant finishedAt,
-        String errorMessage,
+        OperationFailure failure,
         List<String> logLines) {
 
     public Operation {

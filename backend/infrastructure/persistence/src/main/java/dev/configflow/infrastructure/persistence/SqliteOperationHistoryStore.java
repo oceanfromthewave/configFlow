@@ -1,6 +1,8 @@
 package dev.configflow.infrastructure.persistence;
 
 import dev.configflow.domain.operation.Operation;
+import dev.configflow.domain.operation.OperationFailure;
+import dev.configflow.domain.operation.OperationFailures;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationState;
@@ -13,6 +15,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -31,18 +34,21 @@ public final class SqliteOperationHistoryStore implements OperationHistoryStore 
 
     private static final String UPSERT = """
             INSERT INTO operation_history
-              (id, repository_id, type, state, started_at, finished_at, error_message, log)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (id, repository_id, type, state, started_at, finished_at,
+               error_code, error_message, log)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               state = excluded.state,
               started_at = excluded.started_at,
               finished_at = excluded.finished_at,
+              error_code = excluded.error_code,
               error_message = excluded.error_message,
               log = excluded.log
             """;
 
     private static final String SELECT = """
-            SELECT id, repository_id, type, state, started_at, finished_at, error_message, log
+            SELECT id, repository_id, type, state, started_at, finished_at,
+                   error_code, error_message, log
             FROM operation_history
             """;
 
@@ -62,8 +68,10 @@ public final class SqliteOperationHistoryStore implements OperationHistoryStore 
             ps.setString(4, operation.state().name());
             ps.setString(5, (operation.startedAt() == null ? Instant.now() : operation.startedAt()).toString());
             ps.setString(6, operation.finishedAt() == null ? null : operation.finishedAt().toString());
-            ps.setString(7, operation.errorMessage());
-            ps.setString(8, joinLog(operation.logLines()));
+            OperationFailure failure = operation.failure();
+            ps.setString(7, failure == null ? null : failure.code());
+            ps.setString(8, failure == null ? null : failure.message());
+            ps.setString(9, joinLog(operation.logLines()));
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new PersistenceException("Failed to save operation " + operation.id().asString(), e);
@@ -126,7 +134,25 @@ public final class SqliteOperationHistoryStore implements OperationHistoryStore 
                 null,
                 Instant.parse(rs.getString("started_at")),
                 finishedAt == null ? null : Instant.parse(finishedAt),
-                rs.getString("error_message"),
+                failureOf(rs),
                 log == null ? List.of() : List.of(log.split("\n", -1)));
+    }
+
+    /**
+     * Rebuilds the failure, without its context.
+     *
+     * <p>Rows written before the code column existed have a message and nothing else, and
+     * so does anything archived by an older build. Calling that {@code INTERNAL_ERROR}
+     * would be a claim we cannot support, so it stays unnamed and the client falls back to
+     * showing the message.</p>
+     */
+    private static OperationFailure failureOf(ResultSet rs) throws SQLException {
+        String code = rs.getString("error_code");
+        String message = rs.getString("error_message");
+        if (code == null && message == null) {
+            return null;
+        }
+        return new OperationFailure(
+                code == null ? OperationFailures.UNKNOWN : code, message, Map.of());
     }
 }
