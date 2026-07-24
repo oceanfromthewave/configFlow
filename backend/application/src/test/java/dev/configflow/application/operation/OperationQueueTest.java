@@ -476,6 +476,78 @@ class OperationQueueTest {
     }
 
     @Test
+    void aDrainedChainStopsBeingTracked() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch done = new CountDownLatch(3);
+
+            // Clone keys are one per target directory. Without cleanup a session that
+            // clones into many directories keeps a completed future for every one.
+            for (int i = 0; i < 3; i++) {
+                queue.submit(null, "C:/dev/target-" + i, OperationType.CLONE,
+                        context -> done.countDown());
+            }
+
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertTrue(awaitChainCount(queue, 0),
+                    "finished chains still tracked: " + queue.chainCount());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void cleanupDoesNotDropAChainThatStillHasWorkQueued() throws Exception {
+        ExecutorService pool = Executors.newCachedThreadPool();
+        try {
+            OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
+            CountDownLatch firstRunning = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            CountDownLatch bothDone = new CountDownLatch(2);
+            AtomicInteger concurrent = new AtomicInteger();
+            AtomicInteger peak = new AtomicInteger();
+
+            queue.submit(null, "C:/dev/same", OperationType.CLONE, context -> {
+                peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
+                firstRunning.countDown();
+                assertTrue(release.await(5, TimeUnit.SECONDS));
+                concurrent.decrementAndGet();
+                bothDone.countDown();
+            });
+            assertTrue(firstRunning.await(5, TimeUnit.SECONDS));
+
+            // Appended while the first is still running. When the first finishes it must
+            // not take the key with it, or this one's successor would start alongside it.
+            queue.submit(null, "C:/dev/same", OperationType.CLONE, context -> {
+                peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
+                Thread.sleep(15);
+                concurrent.decrementAndGet();
+                bothDone.countDown();
+            });
+            release.countDown();
+
+            assertTrue(bothDone.await(10, TimeUnit.SECONDS));
+            assertEquals(1, peak.get(), "the second must still queue behind the first");
+            assertTrue(awaitChainCount(queue, 0));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** Cleanup runs after the task returns, so the count settles slightly later. */
+    private static boolean awaitChainCount(OperationQueue queue, int expected)
+            throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            if (queue.chainCount() == expected) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return false;
+    }
+
+    @Test
     void submittingAfterShutdownIsRefused() {
         OperationQueue queue = inlineQueue();
         queue.shutdown(Duration.ZERO);

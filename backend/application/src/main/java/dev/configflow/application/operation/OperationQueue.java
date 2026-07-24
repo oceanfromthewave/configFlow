@@ -65,8 +65,8 @@ public final class OperationQueue {
 
     /**
      * Tail of each chain, keyed by the resource its operations share — see
-     * {@link #chainKeyFor}. Entries are never removed: one per repository, plus one per
-     * clone target, which over a session is a handful of completed futures.
+     * {@link #chainKeyFor}. A key lives only while work is outstanding on it: each chain
+     * removes itself once it drains, so clone targets do not accumulate.
      */
     private final Map<String, CompletableFuture<Void>> tails = new ConcurrentHashMap<>();
 
@@ -114,7 +114,9 @@ public final class OperationQueue {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(task, "task");
         LiveOperation operation = new LiveOperation(OperationId.newId(), repositoryId, type);
+        String chainKey = chainKeyFor(operation, repositoryId, resourceKey);
 
+        CompletableFuture<Void> chained;
         // Admission and shutdown share this lock. Without it shutdown could snapshot the
         // chains between the accepting check and the linkage below, leaving an accepted
         // operation outside the wait and stuck at QUEUED.
@@ -124,8 +126,7 @@ public final class OperationQueue {
             }
             live.put(operation.id, operation);
 
-            String chainKey = chainKeyFor(operation, repositoryId, resourceKey);
-            tails.compute(chainKey, (key, tail) -> {
+            chained = tails.compute(chainKey, (key, tail) -> {
                 CompletableFuture<Void> previous =
                         tail == null ? CompletableFuture.completedFuture(null) : tail;
                 return previous
@@ -135,7 +136,22 @@ public final class OperationQueue {
             });
         }
 
+        // Drop the chain once it drains: repository keys are few, but clone keys are one
+        // per target directory and would otherwise accumulate for the whole session.
+        //
+        // Conditional on purpose. If another submit has already appended to this key, the
+        // map holds that newer tail and removing it would let the next arrival start a
+        // fresh chain alongside work that is still running. Registered outside the lock,
+        // and outside compute, because a synchronous executor completes the future before
+        // compute returns — removing from inside would be a recursive update.
+        chained.whenComplete((ignoredResult, ignoredError) -> tails.remove(chainKey, chained));
+
         return operation.snapshot();
+    }
+
+    /** How many chains are still tracked. Package-private: only the leak test asks. */
+    int chainCount() {
+        return tails.size();
     }
 
     /**
