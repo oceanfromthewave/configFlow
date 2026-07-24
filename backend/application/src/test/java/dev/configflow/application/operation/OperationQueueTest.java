@@ -499,36 +499,54 @@ class OperationQueueTest {
 
     @Test
     void cleanupDoesNotDropAChainThatStillHasWorkQueued() throws Exception {
+        String key = "C:/dev/same";
         ExecutorService pool = Executors.newCachedThreadPool();
         try {
             OperationQueue queue = new OperationQueue(history, events, fixedClock(), pool);
             CountDownLatch firstRunning = new CountDownLatch(1);
-            CountDownLatch release = new CountDownLatch(1);
-            CountDownLatch bothDone = new CountDownLatch(2);
+            CountDownLatch secondRunning = new CountDownLatch(1);
+            CountDownLatch releaseFirst = new CountDownLatch(1);
+            CountDownLatch releaseSecond = new CountDownLatch(1);
+            CountDownLatch allDone = new CountDownLatch(3);
             AtomicInteger concurrent = new AtomicInteger();
             AtomicInteger peak = new AtomicInteger();
 
-            queue.submit(null, "C:/dev/same", OperationType.CLONE, context -> {
+            queue.submit(null, key, OperationType.CLONE, context -> {
                 peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
                 firstRunning.countDown();
-                assertTrue(release.await(5, TimeUnit.SECONDS));
+                assertTrue(releaseFirst.await(5, TimeUnit.SECONDS));
                 concurrent.decrementAndGet();
-                bothDone.countDown();
+                allDone.countDown();
             });
             assertTrue(firstRunning.await(5, TimeUnit.SECONDS));
 
-            // Appended while the first is still running. When the first finishes it must
-            // not take the key with it, or this one's successor would start alongside it.
-            queue.submit(null, "C:/dev/same", OperationType.CLONE, context -> {
+            queue.submit(null, key, OperationType.CLONE, context -> {
                 peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
-                Thread.sleep(15);
+                secondRunning.countDown();
+                assertTrue(releaseSecond.await(5, TimeUnit.SECONDS));
                 concurrent.decrementAndGet();
-                bothDone.countDown();
+                allDone.countDown();
             });
-            release.countDown();
 
-            assertTrue(bothDone.await(10, TimeUnit.SECONDS));
-            assertEquals(1, peak.get(), "the second must still queue behind the first");
+            // Let the first finish, and its cleanup run, while the second is still going.
+            releaseFirst.countDown();
+            assertTrue(secondRunning.await(5, TimeUnit.SECONDS));
+            Thread.sleep(100);
+
+            // Removing the key unconditionally here looks harmless — the second is
+            // already chained on the first's future and still runs in order — and stays
+            // harmless right up until a third arrival finds no chain to join.
+            assertEquals(1, queue.chainCount(), "the running chain lost its key");
+
+            queue.submit(null, key, OperationType.CLONE, context -> {
+                peak.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
+                concurrent.decrementAndGet();
+                allDone.countDown();
+            });
+            releaseSecond.countDown();
+
+            assertTrue(allDone.await(10, TimeUnit.SECONDS));
+            assertEquals(1, peak.get(), "a later arrival must queue behind work still running");
             assertTrue(awaitChainCount(queue, 0));
         } finally {
             pool.shutdownNow();
