@@ -33,7 +33,10 @@ public final class InMemoryCredentialStore implements CredentialStore {
 
     @Override
     public Optional<Credential> find(String storeKey) {
-        return Optional.ofNullable(secrets.get(storeKey));
+        // Hand back a copy: the caller may wipe the secret after use, and that must
+        // not reach in and zero out the stored one (mirrors store()).
+        return Optional.ofNullable(secrets.get(storeKey))
+                .map(c -> new Credential(c.host(), c.protocol(), c.username(), c.secret().clone()));
     }
 
     @Override
