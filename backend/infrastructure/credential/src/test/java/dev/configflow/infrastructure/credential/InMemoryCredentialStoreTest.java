@@ -25,6 +25,19 @@ class InMemoryCredentialStoreTest {
     }
 
     @Test
+    void findReturnsACopyTheCallerCanWipeWithoutTouchingTheStore() {
+        InMemoryCredentialStore store = new InMemoryCredentialStore();
+        String key = store.store(new Credential("github.com", "https", "alice", "s3cr3t".toCharArray()));
+
+        // A caller wipes the secret it got back (the char[] discipline) — that must
+        // not reach in and zero out the stored one. Mirrors the store() case.
+        Arrays.fill(store.find(key).orElseThrow().secret(), '\0');
+
+        char[] kept = store.find(key).orElseThrow().secret();
+        assertArrayEquals("s3cr3t".toCharArray(), kept);
+    }
+
+    @Test
     void deleteRemovesTheSecret() {
         InMemoryCredentialStore store = new InMemoryCredentialStore();
         String key = store.store(new Credential("github.com", "https", null, "x".toCharArray()));

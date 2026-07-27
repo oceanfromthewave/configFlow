@@ -17,7 +17,12 @@ public interface CredentialStore {
      */
     String store(Credential credential);
 
-    /** Retrieves a credential by its store key. */
+    /**
+     * Retrieves a credential by its store key.
+     *
+     * <p>The returned secret is the caller's to wipe, so an implementation must hand
+     * back a copy rather than its retained array.</p>
+     */
     Optional<Credential> find(String storeKey);
 
     /** Removes a credential from the OS store. */
