@@ -21,7 +21,13 @@ public final class InMemoryCredentialStore implements CredentialStore {
     @Override
     public String store(Credential credential) {
         String storeKey = "mem:" + UUID.randomUUID();
-        secrets.put(storeKey, credential);
+        // Copy the secret: the caller wipes its array right after store() returns
+        // (see CredentialStore#store), so a kept reference would be zeroed out too.
+        // A real OS adapter escapes this by copying the bytes into the keychain.
+        Credential copy = new Credential(
+                credential.host(), credential.protocol(), credential.username(),
+                credential.secret().clone());
+        secrets.put(storeKey, copy);
         return storeKey;
     }
 

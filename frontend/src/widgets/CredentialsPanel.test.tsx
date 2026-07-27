@@ -105,6 +105,35 @@ describe('CredentialsPanel', () => {
     expect(calls[0].url).toContain('/credentials/cred-42')
   })
 
+  it('surfaces a translated error when a delete fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        const method = init?.method ?? 'GET'
+        if (method === 'DELETE') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ code: 'INTERNAL_ERROR', title: 'boom', status: 500 }),
+              { status: 500, headers: { 'content-type': 'application/problem+json' } },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify([credential()]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+      }),
+    )
+
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '삭제' }))
+
+    // Failing silently used to just re-enable the button; the row must now say why.
+    expect(await screen.findByText(/삭제하지 못했습니다/)).toBeInTheDocument()
+  })
+
   it('posts the entered credential, secret included', async () => {
     const calls = stubCredentials([])
 

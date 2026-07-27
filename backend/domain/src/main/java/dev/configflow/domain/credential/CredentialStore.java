@@ -8,7 +8,13 @@ import java.util.Optional;
  */
 public interface CredentialStore {
 
-    /** Stores a credential and returns the opaque key used to retrieve it later. */
+    /**
+     * Stores a credential and returns the opaque key used to retrieve it later.
+     *
+     * <p>The caller wipes {@code credential.secret()} right after this returns, so an
+     * implementation that keeps the secret beyond the call must copy it, not retain the
+     * passed array.</p>
+     */
     String store(Credential credential);
 
     /** Retrieves a credential by its store key. */
