@@ -23,23 +23,31 @@ function CredentialRow({ credential }: { credential: Credential }) {
   const deleting = del.isPending && del.variables === credential.id
 
   return (
-    <li className="flex items-center gap-3 rounded border border-border px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-primary">
-          {`${credential.protocol}://${credential.host}`}
-        </p>
-        <p className="truncate text-xs text-muted">
-          {credential.username || t('settings.credentials.tokenOnly')}
-        </p>
+    <li className="flex flex-col gap-1 rounded border border-border px-3 py-2">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-primary">
+            {`${credential.protocol}://${credential.host}`}
+          </p>
+          <p className="truncate text-xs text-muted">
+            {credential.username || t('settings.credentials.tokenOnly')}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={deleting}
+          onClick={() => del.mutate(credential.id)}
+        >
+          {deleting ? t('settings.credentials.deleting') : t('settings.credentials.delete')}
+        </Button>
       </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={deleting}
-        onClick={() => del.mutate(credential.id)}
-      >
-        {deleting ? t('settings.credentials.deleting') : t('settings.credentials.delete')}
-      </Button>
+      {del.isError ? (
+        // A failed delete only re-enabled the button before; say why it failed.
+        <p className="text-xs text-vcs-deleted">
+          {t('settings.credentials.deleteFailed')}: {t(apiErrorKey(del.error))}
+        </p>
+      ) : null}
     </li>
   )
 }
@@ -84,7 +92,7 @@ function AddCredentialForm() {
           <input
             value={host}
             onChange={(e) => setHost(e.target.value)}
-            placeholder="github.com"
+            placeholder={t('settings.credentials.hostPlaceholder')}
             className={inputClass}
           />
         </label>
