@@ -1,14 +1,20 @@
 package dev.configflow.config;
 
+import dev.configflow.application.credential.CredentialService;
 import dev.configflow.application.settings.SettingsService;
+import dev.configflow.domain.credential.CredentialRefStore;
+import dev.configflow.domain.credential.CredentialStore;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.settings.SettingsStore;
+import dev.configflow.infrastructure.credential.InMemoryCredentialStore;
+import dev.configflow.infrastructure.persistence.SqliteCredentialRefStore;
 import dev.configflow.infrastructure.persistence.SqliteDatabase;
 import dev.configflow.infrastructure.persistence.SqliteOperationHistoryStore;
 import dev.configflow.infrastructure.persistence.SqliteRepositoryStore;
 import dev.configflow.infrastructure.persistence.SqliteSettingsStore;
 import java.nio.file.Path;
+import java.time.Clock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,5 +58,25 @@ public class PersistenceConfig {
     @Bean
     public SettingsService settingsService(SettingsStore settingsStore) {
         return new SettingsService(settingsStore);
+    }
+
+    @Bean
+    public CredentialRefStore credentialRefStore(SqliteDatabase database) {
+        return new SqliteCredentialRefStore(database);
+    }
+
+    /**
+     * Secrets store. In-memory for now; slice 3 swaps this one line for the Windows
+     * Credential Manager adapter, and nothing else in the wiring changes.
+     */
+    @Bean
+    public CredentialStore credentialStore() {
+        return new InMemoryCredentialStore();
+    }
+
+    @Bean
+    public CredentialService credentialService(
+            CredentialStore credentialStore, CredentialRefStore credentialRefStore, Clock clock) {
+        return new CredentialService(credentialStore, credentialRefStore, clock);
     }
 }

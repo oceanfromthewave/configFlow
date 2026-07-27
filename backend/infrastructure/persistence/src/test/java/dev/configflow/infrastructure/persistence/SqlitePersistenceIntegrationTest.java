@@ -3,8 +3,11 @@ package dev.configflow.infrastructure.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.configflow.domain.credential.CredentialId;
+import dev.configflow.domain.credential.CredentialRef;
 import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationFailure;
 import dev.configflow.domain.operation.OperationFailures;
@@ -28,6 +31,8 @@ import org.junit.jupiter.api.io.TempDir;
  * Flyway migration runs and that the adapters implement the ports correctly.
  */
 class SqlitePersistenceIntegrationTest {
+
+    private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
     @TempDir
     Path tempDir;
@@ -197,6 +202,64 @@ class SqlitePersistenceIntegrationTest {
         operations.save(succeeded);
 
         assertNull(operations.findById(succeeded.id()).orElseThrow().failure());
+    }
+
+    @Test
+    void credentialRefCrudRoundTrips() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        CredentialRef alice = CredentialRef.issue("github.com", "https", "alice", "key-1", NOW);
+        CredentialRef bob = CredentialRef.issue("gitlab.com", "https", "bob", "key-2", NOW.plusSeconds(60));
+
+        store.save(alice);
+        store.save(bob);
+
+        assertEquals(Optional.of(alice), store.findById(alice.id()));
+        assertEquals(Optional.of(alice), store.findByTarget("github.com", "https", "alice"));
+        // Newest first.
+        assertEquals(List.of(bob, alice), store.findAll());
+
+        store.delete(alice.id());
+        assertTrue(store.findById(alice.id()).isEmpty());
+        assertEquals(List.of(bob), store.findAll());
+    }
+
+    @Test
+    void credentialUpsertKeepsTheOriginalCreationTime() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        CredentialRef first = CredentialRef.issue("github.com", "https", "alice", "key-1", NOW);
+        store.save(first);
+
+        // Same id, rotated token: an update, not a fresh registration.
+        CredentialRef rotated = new CredentialRef(
+                first.id(), "github.com", "https", "alice", "key-2", NOW.plusSeconds(3600));
+        store.save(rotated);
+
+        CredentialRef stored = store.findById(first.id()).orElseThrow();
+        assertEquals("key-2", stored.storeKey());
+        assertEquals(NOW, stored.createdAt(), "an update is not a new issue");
+        assertEquals(1, store.findAll().size());
+    }
+
+    @Test
+    void findByTargetMatchesRegardlessOfHostCasing() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        store.save(CredentialRef.issue("github.com", "https", "alice", "key-1", NOW));
+
+        // The row was normalised to lower case on the way in; the lookup has to normalise
+        // too, or a caller spelling it "GitHub.com" would miss its own credential.
+        assertTrue(store.findByTarget("GitHub.com", "HTTPS", "alice").isPresent());
+    }
+
+    @Test
+    void tokenOnlyCredentialsAreStillConstrainedByTheUniqueIndex() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        // username null becomes "" in CredentialRef precisely so SQLite's UNIQUE index
+        // engages: stored as NULL it would count every token-only row as distinct and let
+        // duplicates for one host pile up — the common case for a GitHub PAT.
+        store.save(CredentialRef.issue("github.com", "https", null, "key-1", NOW));
+
+        CredentialRef duplicate = CredentialRef.issue("github.com", "https", null, "key-2", NOW);
+        assertThrows(PersistenceException.class, () -> store.save(duplicate));
     }
 
     /** Repository-less on purpose: no row in {@code repository} to reference. */

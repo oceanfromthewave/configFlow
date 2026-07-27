@@ -7,7 +7,7 @@ import { create } from 'zustand'
  * deep-linking or history semantics, so navigation is a plain state switch
  * instead of react-router. Revisit if URL-addressable views are ever needed.
  */
-export type AppRoute = 'welcome' | 'repository'
+export type AppRoute = 'welcome' | 'repository' | 'settings'
 export type CenterTab = 'history' | 'workingTree'
 export type BottomPanelTab = 'console' | 'operations' | 'log'
 
