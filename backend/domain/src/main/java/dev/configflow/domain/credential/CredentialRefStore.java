@@ -14,4 +14,6 @@ public interface CredentialRefStore
 	List<CredentialRef> findAll();
 
 	void delete(CredentialId id);
+
+	Optional<CredentialRef> findFor(String host,String protocol);
 }

@@ -80,6 +80,16 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 	}
 
 	@Override
+	public Optional<CredentialRef> findFor(String host, String protocol)
+	{
+		// Newest first so a rotated token (the latest row) is chosen over the stale one.
+		return queryOne(SELECT + " WHERE host = ? AND protocol = ? ORDER BY created_at DESC LIMIT 1", ps -> {
+			ps.setString(1, host == null ? null : host.toLowerCase());
+			ps.setString(2, protocol == null ? null : protocol.toLowerCase());
+		});
+	}
+
+	@Override
 	public List<CredentialRef> findAll()
 	{
 		String sql = SELECT + " ORDER BY created_at DESC";
@@ -101,42 +111,42 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 	@Override
 	public void delete(CredentialId id)
 	{
-		try(Connection con = database.openConnection(); PreparedStatement ps = con.prepareStatement("DELETE FROM credential_ref WHERE id = ? ")) {
-              ps.setString(1,id.asString());
-		ps.executeUpdate();
-	} catch(
-	SQLException e)
-
-	{
-		throw new PersistenceException("Failed to delete credential " + id.asString(), e);
-	}
-}
-
-private Optional<CredentialRef> queryOne(String sql, StatementBinder binder)
-{
-	try(Connection con = database.openConnection(); PreparedStatement ps = con.prepareStatement(sql))
-	{
-		binder.bind(ps);
-		try(ResultSet rs = ps.executeQuery())
+		try(Connection con = database.openConnection(); PreparedStatement ps = con.prepareStatement("DELETE FROM credential_ref WHERE id = ?"))
 		{
-			return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+			ps.setString(1, id.asString());
+			ps.executeUpdate();
+		}
+		catch(SQLException e)
+		{
+			throw new PersistenceException("Failed to delete credential " + id.asString(), e);
 		}
 	}
-	catch(SQLException e)
+
+	private Optional<CredentialRef> queryOne(String sql, StatementBinder binder)
 	{
-		throw new PersistenceException("Failed to load credential", e);
+		try(Connection con = database.openConnection(); PreparedStatement ps = con.prepareStatement(sql))
+		{
+			binder.bind(ps);
+			try(ResultSet rs = ps.executeQuery())
+			{
+				return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+			}
+		}
+		catch(SQLException e)
+		{
+			throw new PersistenceException("Failed to load credential", e);
+		}
+	}
+
+	private static CredentialRef map(ResultSet rs) throws SQLException
+	{
+		return new CredentialRef(CredentialId.of(rs.getString("id")), rs.getString("host"), rs.getString("protocol"), rs.getString("username"),
+				rs.getString("store_key"), Instant.parse(rs.getString("created_at")));
+	}
+
+	@FunctionalInterface
+	private interface StatementBinder
+	{
+		void bind(PreparedStatement ps) throws SQLException;
 	}
 }
-
-private static CredentialRef map(ResultSet rs) throws SQLException
-{
-	return new CredentialRef(CredentialId.of(rs.getString("id")), rs.getString("host"), rs.getString("protocol"), rs.getString("username"),
-			rs.getString("store_key"), Instant.parse(rs.getString("created_at")));
-}
-
-@FunctionalInterface
-private interface StatementBinder
-{
-	void bind(PreparedStatement ps) throws SQLException;
-}
-  }

@@ -251,6 +251,41 @@ class SqlitePersistenceIntegrationTest {
     }
 
     @Test
+    void findForPicksTheNewestCredentialForTheHost() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        // Two accounts on one host. findFor is username-agnostic — it is what a fetch asks,
+        // knowing only the URL — and takes the newest, so a rotated token beats the row it
+        // replaced instead of the stale one shadowing it.
+        CredentialRef older = CredentialRef.issue("github.com", "https", "alice", "key-old", NOW);
+        CredentialRef newer =
+                CredentialRef.issue("github.com", "https", "bob", "key-new", NOW.plusSeconds(60));
+        store.save(older);
+        store.save(newer);
+
+        assertEquals(Optional.of(newer), store.findFor("github.com", "https"));
+    }
+
+    @Test
+    void findForNormalisesHostAndProtocolCasing() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        store.save(CredentialRef.issue("github.com", "https", "alice", "key-1", NOW));
+
+        // A remote URL might be spelled "GitHub.com"; the row was lowercased on the way in,
+        // so the lookup lowercases too or it finds nothing.
+        assertTrue(store.findFor("GitHub.com", "HTTPS").isPresent());
+    }
+
+    @Test
+    void findForIsEmptyWhenNoCredentialMatchesTheHost() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        store.save(CredentialRef.issue("github.com", "https", "alice", "key-1", NOW));
+
+        // Same host but the wrong protocol, and an unknown host, must both miss.
+        assertTrue(store.findFor("github.com", "ssh").isEmpty());
+        assertTrue(store.findFor("gitlab.com", "https").isEmpty());
+    }
+
+    @Test
     void tokenOnlyCredentialsAreStillConstrainedByTheUniqueIndex() {
         SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
         // username null becomes "" in CredentialRef precisely so SQLite's UNIQUE index
