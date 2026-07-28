@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.configflow.domain.credential.Credential;
@@ -101,6 +102,17 @@ class WindowsCredentialStoreTest {
         store.delete(key);
 
         assertTrue(store.find(key).isEmpty());
+    }
+
+    @Test
+    void rejectsASecretTooLargeForTheStore() {
+        // A pasted secret past the Windows blob limit is caller error (→ 400), not a 500,
+        // and must be caught before CredWrite so nothing lands in the store.
+        char[] tooBig = new char[CredAdvapi32.CRED_MAX_CREDENTIAL_BLOB_SIZE + 1];
+        Arrays.fill(tooBig, 'x');
+
+        assertThrows(IllegalArgumentException.class,
+                () -> store.store(new Credential("github.com", "https", "alice", tooBig)));
     }
 
     @Test
