@@ -2,6 +2,7 @@ package dev.configflow.application.operation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -34,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -344,6 +346,49 @@ class OperationQueueTest {
 
         assertFalse(queue.cancel(accepted.id()), "already finished");
         assertFalse(queue.cancel(OperationId.newId()), "never existed");
+    }
+
+    // --- retry -----------------------------------------------------------
+
+    @Test
+    void retryReRunsAFailedOperationOnceItsCauseIsFixed() {
+        OperationQueue queue = inlineQueue();
+        AtomicBoolean credentialsAvailable = new AtomicBoolean(false);
+
+        // The task the auth flow re-runs: it fails until the store has the answer, then
+        // succeeds. Re-running it verbatim is only correct because it re-reads the current
+        // state rather than replaying a recorded result.
+        OperationTask task = context -> {
+            if (!credentialsAvailable.get()) {
+                throw new VcsAuthenticationRequiredException("github.com", "https", null);
+            }
+        };
+        Operation failed = queue.submit(REPO_A, OperationType.FETCH, task);
+        assertEquals(OperationState.FAILED, queue.find(failed.id()).orElseThrow().state());
+
+        credentialsAvailable.set(true);
+        Operation retried = queue.retry(failed.id()).orElseThrow();
+
+        assertNotEquals(failed.id(), retried.id(),
+                "retry is a fresh attempt, not a revival of the same operation");
+        assertEquals(REPO_A, retried.repositoryId(), "the retry runs the same work");
+        assertEquals(OperationType.FETCH, retried.type());
+        assertEquals(OperationState.SUCCEEDED, queue.find(retried.id()).orElseThrow().state());
+        assertEquals(OperationState.FAILED, queue.find(failed.id()).orElseThrow().state(),
+                "the original failure stays on the record");
+    }
+
+    @Test
+    void retryIsEmptyUnlessThereIsAResidentFailureToReRun() {
+        OperationQueue queue = inlineQueue();
+        Operation succeeded = queue.submit(REPO_A, OperationType.CHECKOUT, context -> {
+        });
+        assertEquals(OperationState.SUCCEEDED, queue.find(succeeded.id()).orElseThrow().state());
+
+        // A success has its task, but retrying it would just repeat done work, not answer a
+        // failure — and an unknown id has no task at all.
+        assertTrue(queue.retry(succeeded.id()).isEmpty(), "a success is not retryable");
+        assertTrue(queue.retry(OperationId.newId()).isEmpty(), "an unknown id is not retryable");
     }
 
     // --- shutdown --------------------------------------------------------

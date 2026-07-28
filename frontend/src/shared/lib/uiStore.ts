@@ -22,6 +22,20 @@ export interface SelectedFile {
   staged: boolean
 }
 
+/**
+ * A credential prompt raised when a queued operation fails with
+ * `VCS_AUTH_REQUIRED` (docs/07 §4).
+ *
+ * Carries the operation to retry once a credential is saved, and the remote
+ * (`host`/`protocol`) the credential is for. The failure can arrive on any
+ * screen, so the prompt lives here rather than in one that may not be open.
+ */
+export interface AuthPrompt {
+  operationId: string
+  host: string
+  protocol: string
+}
+
 interface UiState {
   route: AppRoute
   setRoute: (route: AppRoute) => void
@@ -42,6 +56,15 @@ interface UiState {
 
   bottomPanelTab: BottomPanelTab
   setBottomPanelTab: (tab: BottomPanelTab) => void
+
+  /**
+   * Credential prompt for a remote that rejected a queued operation; null when
+   * nothing is waiting on the user. Global, because the operation can fail on
+   * any screen.
+   */
+  authPrompt: AuthPrompt | null
+  promptForAuth: (prompt: AuthPrompt) => void
+  dismissAuthPrompt: () => void
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -68,4 +91,8 @@ export const useUiStore = create<UiState>()((set) => ({
 
   bottomPanelTab: 'console',
   setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab }),
+
+  authPrompt: null,
+  promptForAuth: (authPrompt) => set({ authPrompt }),
+  dismissAuthPrompt: () => set({ authPrompt: null }),
 }))

@@ -12,6 +12,7 @@ import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,419 +36,481 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Runs mutating VCS work off the request thread, one operation at a time per repository.
  *
  * <p><b>Why serial per repository.</b> Two commands on one working copy corrupt each
- * other — Git takes {@code index.lock} and a second writer simply fails, and a checkout
- * racing a commit is worse than a failure. Different repositories share nothing, so they
- * run in parallel: the serialisation is per repository, not global.</p>
+ * other — Git takes {@code index.lock} and a second writer simply fails, and a checkout racing a commit is worse than a failure. Different repositories share
+ * nothing, so they run in parallel: the serialisation is per repository, not global.</p>
  *
  * <p><b>How.</b> Each repository owns a chain of futures; submitting appends to its tail.
- * The chain swallows the previous link's outcome, so one failed operation does not strand
- * everything queued behind it.</p>
+ * The chain swallows the previous link's outcome, so one failed operation does not strand everything queued behind it.</p>
  *
  * <p><b>Cancellation is cooperative.</b> A queued operation is dropped before it starts.
- * A running one only stops where its task calls {@link OperationContext#throwIfCancelled()},
- * because interrupting a JGit call mid-write is how a working copy gets corrupted.</p>
+ * A running one only stops where its task calls {@link OperationContext#throwIfCancelled()}, because interrupting a JGit call mid-write is how a working copy
+ * gets corrupted.</p>
  *
  * <p>Pure Java on purpose: no Spring, no SSE. Progress leaves through the
  * {@link OperationEvents} port so the queue stays testable without a transport.</p>
  */
-public final class OperationQueue {
+public final class OperationQueue
+{
 
-    /** Per-operation console cap: a runaway clone must not exhaust the heap. */
-    static final int MAX_LOG_LINES = 500;
+	/** Per-operation console cap: a runaway clone must not exhaust the heap. */
+	static final int MAX_LOG_LINES = 500;
 
-    /** How many finished operations stay resident; older ones are read back from history. */
-    static final int MAX_RETAINED = 100;
+	/** How many finished operations stay resident; older ones are read back from history. */
+	static final int MAX_RETAINED = 100;
 
-    private final OperationHistoryStore history;
-    private final OperationEvents events;
-    private final Clock clock;
-    private final Executor executor;
+	private final OperationHistoryStore history;
+	private final OperationEvents events;
+	private final Clock clock;
+	private final Executor executor;
 
-    private final Map<OperationId, LiveOperation> live = new ConcurrentHashMap<>();
+	private final Map<OperationId, LiveOperation> live = new ConcurrentHashMap<>();
 
-    /**
-     * Tail of each chain, keyed by the resource its operations share — see
-     * {@link #chainKeyFor}. A key lives only while work is outstanding on it: each chain
-     * removes itself once it drains, so clone targets do not accumulate.
-     */
-    private final Map<String, CompletableFuture<Void>> tails = new ConcurrentHashMap<>();
+	/**
+	 * Tail of each chain, keyed by the resource its operations share — see {@link #chainKeyFor}. A key lives only while work is outstanding on it: each chain
+	 * removes itself once it drains, so clone targets do not accumulate.
+	 */
+	private final Map<String, CompletableFuture<Void>> tails = new ConcurrentHashMap<>();
 
-    /** Guards admission against shutdown; held only for map work, never while a task runs. */
-    private final Object lifecycle = new Object();
+	/** Guards admission against shutdown; held only for map work, never while a task runs. */
+	private final Object lifecycle = new Object();
 
-    private volatile boolean accepting = true;
+	private volatile boolean accepting = true;
 
-    public OperationQueue(
-            OperationHistoryStore history,
-            OperationEvents events,
-            Clock clock,
-            Executor executor) {
-        this.history = Objects.requireNonNull(history, "history");
-        this.events = Objects.requireNonNull(events, "events");
-        this.clock = Objects.requireNonNull(clock, "clock");
-        this.executor = Objects.requireNonNull(executor, "executor");
-    }
+	public OperationQueue(OperationHistoryStore history, OperationEvents events, Clock clock, Executor executor)
+	{
+		this.history = Objects.requireNonNull(history, "history");
+		this.events = Objects.requireNonNull(events, "events");
+		this.clock = Objects.requireNonNull(clock, "clock");
+		this.executor = Objects.requireNonNull(executor, "executor");
+	}
 
-    /**
-     * Accepts work and returns immediately with a {@code QUEUED} snapshot.
-     *
-     * @param repositoryId repository the work runs on; {@code null} for work that has no
-     *                     repository yet, such as a clone into a new directory
-     */
-    public Operation submit(RepositoryId repositoryId, OperationType type, OperationTask task) {
-        return submit(repositoryId, null, type, task);
-    }
+	/**
+	 * Accepts work and returns immediately with a {@code QUEUED} snapshot.
+	 *
+	 * @param repositoryId
+	 * 		repository the work runs on; {@code null} for work that has no repository yet, such as a clone into a new directory
+	 */
+	public Operation submit(RepositoryId repositoryId, OperationType type, OperationTask task)
+	{
+		return submit(repositoryId, null, type, task);
+	}
 
-    /**
-     * Accepts work whose exclusive resource is not a registered repository.
-     *
-     * <p>A clone owns its target directory before there is any repository to name it by,
-     * and two clones into one directory overwrite each other exactly the way two commands
-     * on one working copy do. Naming the directory here serialises them.</p>
-     *
-     * @param resourceKey what this work must not run alongside; {@code null} means it
-     *                    shares nothing and may start straight away
-     */
-    public Operation submit(
-            RepositoryId repositoryId,
-            String resourceKey,
-            OperationType type,
-            OperationTask task) {
-        Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(task, "task");
-        LiveOperation operation = new LiveOperation(OperationId.newId(), repositoryId, type);
-        String chainKey = chainKeyFor(operation, repositoryId, resourceKey);
+	/**
+	 * Accepts work whose exclusive resource is not a registered repository.
+	 *
+	 * <p>A clone owns its target directory before there is any repository to name it by,
+	 * and two clones into one directory overwrite each other exactly the way two commands on one working copy do. Naming the directory here serialises
+	 * them.</p>
+	 *
+	 * @param resourceKey
+	 * 		what this work must not run alongside; {@code null} means it shares nothing and may start straight away
+	 */
+	public Operation submit(RepositoryId repositoryId, String resourceKey, OperationType type, OperationTask task)
+	{
+		Objects.requireNonNull(type, "type");
+		Objects.requireNonNull(task, "task");
+		LiveOperation operation = new LiveOperation(OperationId.newId(), repositoryId, resourceKey, type, task);
+		String chainKey = chainKeyFor(operation, repositoryId, resourceKey);
 
-        CompletableFuture<Void> chained;
-        // Admission and shutdown share this lock. Without it shutdown could snapshot the
-        // chains between the accepting check and the linkage below, leaving an accepted
-        // operation outside the wait and stuck at QUEUED.
-        synchronized (lifecycle) {
-            if (!accepting) {
-                throw new IllegalStateException("The operation queue is shutting down");
-            }
-            live.put(operation.id, operation);
+		CompletableFuture<Void> chained;
+		// Admission and shutdown share this lock. Without it shutdown could snapshot the
+		// chains between the accepting check and the linkage below, leaving an accepted
+		// operation outside the wait and stuck at QUEUED.
+		synchronized(lifecycle)
+		{
+			if(!accepting)
+			{
+				throw new IllegalStateException("The operation queue is shutting down");
+			}
+			live.put(operation.id, operation);
 
-            chained = tails.compute(chainKey, (key, tail) -> {
-                CompletableFuture<Void> previous =
-                        tail == null ? CompletableFuture.completedFuture(null) : tail;
-                return previous
-                        // Absorb the previous outcome: a failure must not cancel the queue.
-                        .handle((ignoredResult, ignoredError) -> null)
-                        .thenRunAsync(() -> execute(operation, task), executor);
-            });
-        }
+			chained = tails.compute(chainKey, (key, tail) -> {
+				CompletableFuture<Void> previous = tail == null ? CompletableFuture.completedFuture(null) : tail;
+				return previous
+						// Absorb the previous outcome: a failure must not cancel the queue.
+						.handle((ignoredResult, ignoredError) -> null).thenRunAsync(() -> execute(operation, task), executor);
+			});
+		}
 
-        // Drop the chain once it drains: repository keys are few, but clone keys are one
-        // per target directory and would otherwise accumulate for the whole session.
-        //
-        // Conditional on purpose. If another submit has already appended to this key, the
-        // map holds that newer tail and removing it would let the next arrival start a
-        // fresh chain alongside work that is still running. Registered outside the lock,
-        // and outside compute, because a synchronous executor completes the future before
-        // compute returns — removing from inside would be a recursive update.
-        chained.whenComplete((ignoredResult, ignoredError) -> tails.remove(chainKey, chained));
+		// Drop the chain once it drains: repository keys are few, but clone keys are one
+		// per target directory and would otherwise accumulate for the whole session.
+		//
+		// Conditional on purpose. If another submit has already appended to this key, the
+		// map holds that newer tail and removing it would let the next arrival start a
+		// fresh chain alongside work that is still running. Registered outside the lock,
+		// and outside compute, because a synchronous executor completes the future before
+		// compute returns — removing from inside would be a recursive update.
+		chained.whenComplete((ignoredResult, ignoredError) -> tails.remove(chainKey, chained));
 
-        return operation.snapshot();
-    }
+		return operation.snapshot();
+	}
 
-    /** How many chains are still tracked. Package-private: only the leak test asks. */
-    int chainCount() {
-        return tails.size();
-    }
+	/** How many chains are still tracked. Package-private: only the leak test asks. */
+	int chainCount()
+	{
+		return tails.size();
+	}
 
-    /**
-     * What an operation serialises on: its repository, a named resource, or nothing.
-     *
-     * <p>The prefixes keep the namespaces apart, so a directory named like a repository id
-     * cannot end up sharing that repository's chain.</p>
-     */
-    private static String chainKeyFor(
-            LiveOperation operation, RepositoryId repositoryId, String resourceKey) {
-        if (repositoryId != null) {
-            return "repo:" + repositoryId.asString();
-        }
-        if (resourceKey != null) {
-            return "resource:" + resourceKey;
-        }
-        // Shares nothing, so it gets its own chain rather than queueing behind unrelated
-        // work that happens to also have no repository.
-        return "op:" + operation.id.asString();
-    }
+	/**
+	 * What an operation serialises on: its repository, a named resource, or nothing.
+	 *
+	 * <p>The prefixes keep the namespaces apart, so a directory named like a repository id
+	 * cannot end up sharing that repository's chain.</p>
+	 */
+	private static String chainKeyFor(LiveOperation operation, RepositoryId repositoryId, String resourceKey)
+	{
+		if(repositoryId != null)
+		{
+			return "repo:" + repositoryId.asString();
+		}
+		if(resourceKey != null)
+		{
+			return "resource:" + resourceKey;
+		}
+		// Shares nothing, so it gets its own chain rather than queueing behind unrelated
+		// work that happens to also have no repository.
+		return "op:" + operation.id.asString();
+	}
 
-    /**
-     * Asks an operation to stop.
-     *
-     * @return {@code false} when there is no such operation or it already finished
-     */
-    public boolean cancel(OperationId id) {
-        LiveOperation operation = live.get(id);
-        if (operation == null || operation.state.isTerminal()) {
-            return false;
-        }
-        operation.cancelRequested.set(true);
-        return true;
-    }
+	/**
+	 * Asks an operation to stop.
+	 *
+	 * @return {@code false} when there is no such operation or it already finished
+	 */
+	public boolean cancel(OperationId id)
+	{
+		LiveOperation operation = live.get(id);
+		if(operation == null || operation.state.isTerminal())
+		{
+			return false;
+		}
+		operation.cancelRequested.set(true);
+		return true;
+	}
 
-    /**
-     * Stops taking work and gives what is already queued a chance to finish.
-     *
-     * <p>Shutting the executor down on its own is not enough. A chain only submits its
-     * next link once the previous one completes, so at that moment only the running
-     * operation is with the executor — everything behind it would be rejected on
-     * submission and left sitting at {@code QUEUED} forever, with clients waiting on a
-     * completion event that never arrives.</p>
-     *
-     * <p>So: stop accepting, wait for the chains, and mark whatever is still unfinished
-     * as cancelled. Callers must not shut the executor down until this returns.</p>
-     *
-     * @param grace how long to wait for outstanding work before giving up on it
-     */
-    public void shutdown(Duration grace) {
-        CompletableFuture<?>[] outstanding;
-        synchronized (lifecycle) {
-            accepting = false;
-            outstanding = tails.values().toArray(CompletableFuture[]::new);
-        }
+	/**
+	 * Stops taking work and gives what is already queued a chance to finish.
+	 *
+	 * <p>Shutting the executor down on its own is not enough. A chain only submits its
+	 * next link once the previous one completes, so at that moment only the running operation is with the executor — everything behind it would be rejected on
+	 * submission and left sitting at {@code QUEUED} forever, with clients waiting on a completion event that never arrives.</p>
+	 *
+	 * <p>So: stop accepting, wait for the chains, and mark whatever is still unfinished
+	 * as cancelled. Callers must not shut the executor down until this returns.</p>
+	 *
+	 * @param grace
+	 * 		how long to wait for outstanding work before giving up on it
+	 */
+	public void shutdown(Duration grace)
+	{
+		CompletableFuture<?>[] outstanding;
+		synchronized(lifecycle)
+		{
+			accepting = false;
+			outstanding = tails.values().toArray(CompletableFuture[]::new);
+		}
 
-        try {
-            CompletableFuture.allOf(outstanding).get(grace.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException | TimeoutException e) {
-            // A failed chain already recorded itself, and anything past the deadline is
-            // handled below. Either way there is nothing left to wait for.
-        }
+		try
+		{
+			CompletableFuture.allOf(outstanding).get(grace.toMillis(), TimeUnit.MILLISECONDS);
+		}
+		catch(InterruptedException e)
+		{
+			Thread.currentThread().interrupt();
+		}
+		catch(ExecutionException | TimeoutException e)
+		{
+			// A failed chain already recorded itself, and anything past the deadline is
+			// handled below. Either way there is nothing left to wait for.
+		}
 
-        for (LiveOperation operation : live.values()) {
-            // Ask first: a task still running past the grace period may yet stop on its
-            // own, and terminate() below only wins if it has not finished already.
-            operation.cancelRequested.set(true);
-            terminate(operation, OperationState.CANCELLED, OperationFailure.of(
-                    OperationFailures.CANCELLED,
-                    "The application shut down before this operation finished"));
-        }
-    }
+		for(LiveOperation operation : live.values())
+		{
+			// Ask first: a task still running past the grace period may yet stop on its
+			// own, and terminate() below only wins if it has not finished already.
+			operation.cancelRequested.set(true);
+			terminate(operation, OperationState.CANCELLED,
+					OperationFailure.of(OperationFailures.CANCELLED, "The application shut down before this operation finished"));
+		}
+	}
 
-    /** One operation, live or read back from history. */
-    public Optional<Operation> find(OperationId id) {
-        LiveOperation operation = live.get(id);
-        return operation != null ? Optional.of(operation.snapshot()) : history.findById(id);
-    }
+	/** One operation, live or read back from history. */
+	public Optional<Operation> find(OperationId id)
+	{
+		LiveOperation operation = live.get(id);
+		return operation != null ? Optional.of(operation.snapshot()) : history.findById(id);
+	}
 
-    /**
-     * Operations of a repository, newest first.
-     *
-     * @param state optional state filter, {@code null} for all
-     */
-    public List<Operation> list(RepositoryId repositoryId, OperationState state) {
-        Map<OperationId, Operation> byId = new LinkedHashMap<>();
-        for (LiveOperation operation : live.values()) {
-            if (matches(operation, repositoryId, state)) {
-                byId.put(operation.id, operation.snapshot());
-            }
-        }
-        if (repositoryId != null) {
-            for (Operation archived : history.findRecent(repositoryId, MAX_RETAINED)) {
-                if (state == null || archived.state() == state) {
-                    byId.putIfAbsent(archived.id(), archived);
-                }
-            }
-        }
-        List<Operation> all = new ArrayList<>(byId.values());
-        all.sort(Comparator.comparing(OperationQueue::orderingTime).reversed());
-        return all;
-    }
+	/**
+	 * Operations of a repository, newest first.
+	 *
+	 * @param state
+	 * 		optional state filter, {@code null} for all
+	 */
+	public List<Operation> list(RepositoryId repositoryId, OperationState state)
+	{
+		Map<OperationId, Operation> byId = new LinkedHashMap<>();
+		for(LiveOperation operation : live.values())
+		{
+			if(matches(operation, repositoryId, state))
+			{
+				byId.put(operation.id, operation.snapshot());
+			}
+		}
+		if(repositoryId != null)
+		{
+			for(Operation archived : history.findRecent(repositoryId, MAX_RETAINED))
+			{
+				if(state == null || archived.state() == state)
+				{
+					byId.putIfAbsent(archived.id(), archived);
+				}
+			}
+		}
+		List<Operation> all = new ArrayList<>(byId.values());
+		all.sort(Comparator.comparing(OperationQueue::orderingTime).reversed());
+		return all;
+	}
 
-    // --- execution -------------------------------------------------------
+	public Optional<Operation> retry(OperationId id)
+	{
+		LiveOperation original = live.get(id);
+		if(original == null || original.state != OperationState.FAILED || original.task == null)
+		{
+			return Optional.empty();
+		}
+		return Optional.of(submit(original.repositoryId, original.resourceKey, original.type, original.task));
+	}
 
-    private void execute(LiveOperation operation, OperationTask task) {
-        if (operation.isSettled()) {
-            // Shutdown already recorded an outcome for this one while it waited. Running
-            // it now would touch the repository after the app said it was done.
-            return;
-        }
-        if (operation.cancelRequested.get()) {
-            // Cancelled while still waiting its turn: it must never touch the repository.
-            terminate(operation, OperationState.CANCELLED, null);
-            return;
-        }
+	// --- execution -------------------------------------------------------
 
-        operation.state = OperationState.RUNNING;
-        operation.startedAt = clock.instant();
-        // Announce the start so a client sees it leave the queue even if the task is
-        // silent until it finishes.
-        operation.progress = OperationProgress.indeterminate(operation.type.name());
-        events.progress(operation.id, operation.progress);
+	private void execute(LiveOperation operation, OperationTask task)
+	{
+		if(operation.isSettled())
+		{
+			// Shutdown already recorded an outcome for this one while it waited. Running
+			// it now would touch the repository after the app said it was done.
+			return;
+		}
+		if(operation.cancelRequested.get())
+		{
+			// Cancelled while still waiting its turn: it must never touch the repository.
+			terminate(operation, OperationState.CANCELLED, null);
+			return;
+		}
 
-        try {
-            task.run(new TaskContext(operation));
-            terminate(operation, OperationState.SUCCEEDED, null);
-        } catch (OperationCancelledException e) {
-            terminate(operation, OperationState.CANCELLED, null);
-        } catch (Throwable e) {
-            // Throwable, not Exception: an Error would otherwise leave the operation
-            // stuck in RUNNING for the rest of the session, and anything watching it
-            // would wait forever.
-            terminate(operation, OperationState.FAILED, OperationFailures.classify(e));
-            if (e instanceof Error) {
-                // Rethrown rather than swallowed, so the future completes exceptionally
-                // and the failure is not disguised as an orderly finish. The chain
-                // absorbs it either way, so this does not affect queued work.
-                throw (Error) e;
-            }
-        }
-    }
+		operation.state = OperationState.RUNNING;
+		operation.startedAt = clock.instant();
+		// Announce the start so a client sees it leave the queue even if the task is
+		// silent until it finishes.
+		operation.progress = OperationProgress.indeterminate(operation.type.name());
+		events.progress(operation.id, operation.progress);
 
-    private void terminate(
-            LiveOperation operation, OperationState state, OperationFailure failure) {
-        if (!operation.settle()) {
-            // Someone got here first. Shutdown and a task finishing late both end up
-            // calling this, and the second one must not overwrite the recorded outcome or
-            // emit a duplicate completion.
-            return;
-        }
-        operation.state = state;
-        operation.finishedAt = clock.instant();
-        operation.failure = failure;
+		try
+		{
+			task.run(new TaskContext(operation));
+			terminate(operation, OperationState.SUCCEEDED, null);
+		}
+		catch(OperationCancelledException e)
+		{
+			terminate(operation, OperationState.CANCELLED, null);
+		}
+		catch(Throwable e)
+		{
+			// Throwable, not Exception: an Error would otherwise leave the operation
+			// stuck in RUNNING for the rest of the session, and anything watching it
+			// would wait forever.
+			terminate(operation, OperationState.FAILED, OperationFailures.classify(e));
+			if(e instanceof Error)
+			{
+				// Rethrown rather than swallowed, so the future completes exceptionally
+				// and the failure is not disguised as an orderly finish. The chain
+				// absorbs it either way, so this does not affect queued work.
+				throw (Error) e;
+			}
+		}
+	}
 
-        try {
-            history.save(operation.snapshot());
-        } catch (RuntimeException e) {
-            // Archiving is not the operation's job: losing the record must not turn a
-            // successful checkout into a failure. Surface it on the console instead.
-            operation.addLogLine("Could not archive this operation: "
-                    + OperationFailures.classify(e).message());
-        }
+	private void terminate(LiveOperation operation, OperationState state, OperationFailure failure)
+	{
+		if(!operation.settle())
+		{
+			// Someone got here first. Shutdown and a task finishing late both end up
+			// calling this, and the second one must not overwrite the recorded outcome or
+			// emit a duplicate completion.
+			return;
+		}
+		operation.state = state;
+		operation.finishedAt = clock.instant();
+		operation.failure = failure;
 
-        events.completed(operation.snapshot());
-        trimRetained();
-    }
+		try
+		{
+			history.save(operation.snapshot());
+		}
+		catch(RuntimeException e)
+		{
+			// Archiving is not the operation's job: losing the record must not turn a
+			// successful checkout into a failure. Surface it on the console instead.
+			operation.addLogLine("Could not archive this operation: " + OperationFailures.classify(e).message());
+		}
 
-    /** Keeps memory flat; evicted operations are still readable through the history store. */
-    private void trimRetained() {
-        List<LiveOperation> finished = new ArrayList<>();
-        for (LiveOperation operation : live.values()) {
-            if (operation.state.isTerminal()) {
-                finished.add(operation);
-            }
-        }
-        if (finished.size() <= MAX_RETAINED) {
-            return;
-        }
-        finished.sort(Comparator.comparing(
-                operation -> operation.finishedAt == null ? Instant.EPOCH : operation.finishedAt));
-        for (int i = 0; i < finished.size() - MAX_RETAINED; i++) {
-            live.remove(finished.get(i).id);
-        }
-    }
+		events.completed(operation.snapshot());
+		trimRetained();
+	}
 
-    private static boolean matches(
-            LiveOperation operation, RepositoryId repositoryId, OperationState state) {
-        if (repositoryId != null && !repositoryId.equals(operation.repositoryId)) {
-            return false;
-        }
-        return state == null || operation.state == state;
-    }
+	/** Keeps memory flat; evicted operations are still readable through the history store. */
+	private void trimRetained()
+	{
+		List<LiveOperation> finished = new ArrayList<>();
+		for(LiveOperation operation : live.values())
+		{
+			if(operation.state.isTerminal())
+			{
+				finished.add(operation);
+			}
+		}
+		if(finished.size() <= MAX_RETAINED)
+		{
+			return;
+		}
+		finished.sort(Comparator.comparing(operation -> operation.finishedAt == null ? Instant.EPOCH : operation.finishedAt));
+		for(int i = 0; i < finished.size() - MAX_RETAINED; i++)
+		{
+			live.remove(finished.get(i).id);
+		}
+	}
 
-    /** Queued operations have no timestamps yet, so they sort as most recent. */
-    private static Instant orderingTime(Operation operation) {
-        if (operation.finishedAt() != null) {
-            return operation.finishedAt();
-        }
-        return operation.startedAt() != null ? operation.startedAt() : Instant.MAX;
-    }
+	private static boolean matches(LiveOperation operation, RepositoryId repositoryId, OperationState state)
+	{
+		if(repositoryId != null && !repositoryId.equals(operation.repositoryId))
+		{
+			return false;
+		}
+		return state == null || operation.state == state;
+	}
 
-    // --- live state ------------------------------------------------------
+	/** Queued operations have no timestamps yet, so they sort as most recent. */
+	private static Instant orderingTime(Operation operation)
+	{
+		if(operation.finishedAt() != null)
+		{
+			return operation.finishedAt();
+		}
+		return operation.startedAt() != null ? operation.startedAt() : Instant.MAX;
+	}
 
-    /**
-     * Mutable state of one operation.
-     *
-     * <p>A record would mean rebuilding the whole operation on every progress tick, and
-     * progress arrives thousands of times during a clone. Fields are volatile because the
-     * worker writes them while HTTP threads read them.</p>
-     */
-    private static final class LiveOperation {
+	// --- live state ------------------------------------------------------
 
-        private final OperationId id;
-        private final RepositoryId repositoryId;
-        private final OperationType type;
-        private final List<String> logLines = Collections.synchronizedList(new ArrayList<>());
-        private final AtomicBoolean cancelRequested = new AtomicBoolean();
+	/**
+	 * Mutable state of one operation.
+	 *
+	 * <p>A record would mean rebuilding the whole operation on every progress tick, and
+	 * progress arrives thousands of times during a clone. Fields are volatile because the worker writes them while HTTP threads read them.</p>
+	 */
+	private static final class LiveOperation
+	{
 
-        /** Claimed by whoever records the terminal state, so only the first one counts. */
-        private final AtomicBoolean settled = new AtomicBoolean();
+		private final OperationId id;
+		private final RepositoryId repositoryId;
+		/**
+		 * What it serialises on when it has no repository; kept so a retry re-queues on the same chain.
+		 */
+		private final String resourceKey;
+		private final OperationType type;
+		/** The work itself, kept so a failed operation can be run again on retry. */
+		private final OperationTask task;
+		private final List<String> logLines = Collections.synchronizedList(new ArrayList<>());
+		private final AtomicBoolean cancelRequested = new AtomicBoolean();
 
-        private volatile OperationState state = OperationState.QUEUED;
-        private volatile OperationProgress progress;
-        private volatile Instant startedAt;
-        private volatile Instant finishedAt;
-        private volatile OperationFailure failure;
+		/** Claimed by whoever records the terminal state, so only the first one counts. */
+		private final AtomicBoolean settled = new AtomicBoolean();
 
-        private LiveOperation(OperationId id, RepositoryId repositoryId, OperationType type) {
-            this.id = id;
-            this.repositoryId = repositoryId;
-            this.type = type;
-        }
+		private volatile OperationState state = OperationState.QUEUED;
+		private volatile OperationProgress progress;
+		private volatile Instant startedAt;
+		private volatile Instant finishedAt;
+		private volatile OperationFailure failure;
 
-        /** True for exactly one caller: the one allowed to record the terminal state. */
-        boolean settle() {
-            return settled.compareAndSet(false, true);
-        }
+		private LiveOperation(OperationId id, RepositoryId repositoryId, String resourceKey, OperationType type, OperationTask task)
+		{
+			this.id = id;
+			this.repositoryId = repositoryId;
+			this.resourceKey = resourceKey;
+			this.type = type;
+			this.task = task;
+		}
 
-        boolean isSettled() {
-            return settled.get();
-        }
+		/** True for exactly one caller: the one allowed to record the terminal state. */
+		boolean settle()
+		{
+			return settled.compareAndSet(false, true);
+		}
 
-        void addLogLine(String line) {
-            synchronized (logLines) {
-                if (logLines.size() < MAX_LOG_LINES) {
-                    logLines.add(line);
-                } else if (logLines.size() == MAX_LOG_LINES) {
-                    logLines.add("… further output suppressed after "
-                            + MAX_LOG_LINES + " lines");
-                }
-            }
-        }
+		boolean isSettled()
+		{
+			return settled.get();
+		}
 
-        Operation snapshot() {
-            synchronized (logLines) {
-                return new Operation(
-                        id, repositoryId, type, state, progress,
-                        startedAt, finishedAt, failure, List.copyOf(logLines));
-            }
-        }
-    }
+		void addLogLine(String line)
+		{
+			synchronized(logLines)
+			{
+				if(logLines.size() < MAX_LOG_LINES)
+				{
+					logLines.add(line);
+				}
+				else if(logLines.size() == MAX_LOG_LINES)
+				{
+					logLines.add("… further output suppressed after " + MAX_LOG_LINES + " lines");
+				}
+			}
+		}
 
-    /** The view a running task gets of its own operation. */
-    private final class TaskContext implements OperationContext {
+		Operation snapshot()
+		{
+			synchronized(logLines)
+			{
+				return new Operation(id, repositoryId, type, state, progress, startedAt, finishedAt, failure, List.copyOf(logLines));
+			}
+		}
+	}
 
-        private final LiveOperation operation;
+	/** The view a running task gets of its own operation. */
+	private final class TaskContext implements OperationContext
+	{
 
-        private TaskContext(LiveOperation operation) {
-            this.operation = operation;
-        }
+		private final LiveOperation operation;
 
-        @Override
-        public OperationId operationId() {
-            return operation.id;
-        }
+		private TaskContext(LiveOperation operation)
+		{
+			this.operation = operation;
+		}
 
-        @Override
-        public void progress(OperationProgress progress) {
-            operation.progress = progress;
-            events.progress(operation.id, progress);
-        }
+		@Override
+		public OperationId operationId()
+		{
+			return operation.id;
+		}
 
-        @Override
-        public void log(String line, ConsoleLevel level) {
-            operation.addLogLine(line);
-            events.consoleLine(operation.repositoryId, operation.id, line, level.wireName());
-        }
+		@Override
+		public void progress(OperationProgress progress)
+		{
+			operation.progress = progress;
+			events.progress(operation.id, progress);
+		}
 
-        @Override
-        public boolean isCancelled() {
-            return operation.cancelRequested.get();
-        }
-    }
+		@Override
+		public void log(String line, ConsoleLevel level)
+		{
+			operation.addLogLine(line);
+			events.consoleLine(operation.repositoryId, operation.id, line, level.wireName());
+		}
+
+		@Override
+		public boolean isCancelled()
+		{
+			return operation.cancelRequested.get();
+		}
+	}
 }

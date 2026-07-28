@@ -133,4 +133,30 @@ class OperationControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
+
+    @Test
+    void retry_acceptedRequestAnswers202WithTheFreshOperation() throws Exception {
+        OperationId original = OperationId.newId();
+        OperationId fresh = OperationId.newId();
+        // Retry mints a new operation, so the client is answered with that one to follow.
+        when(queue.retry(original)).thenReturn(Optional.of(new Operation(
+                fresh, RepositoryId.newId(), OperationType.FETCH, OperationState.QUEUED,
+                null, null, null, null, List.of())));
+
+        mvc.perform(post("/api/v1/operations/" + original.asString() + "/retry"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.operationId").value(fresh.asString()))
+                .andExpect(jsonPath("$.state").value("QUEUED"));
+
+        verify(queue).retry(original);
+    }
+
+    @Test
+    void retry_nothingRetryableIs404() throws Exception {
+        when(queue.retry(any())).thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/v1/operations/" + UUID.randomUUID() + "/retry"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
 }

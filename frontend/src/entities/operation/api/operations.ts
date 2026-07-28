@@ -43,3 +43,21 @@ export function useCancelOperation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.operations() }),
   })
 }
+
+/**
+ * Retries a failed operation by re-running it as a fresh one.
+ *
+ * The server mints a new operation id rather than reviving the old record, and
+ * re-running re-resolves credentials — so this is what picks up a credential
+ * just saved for the remote that rejected it. On success the list refreshes to
+ * show the new operation.
+ */
+export function useRetryOperation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (operationId: string) =>
+      apiFetch<Operation>(`/operations/${operationId}/retry`, { method: 'POST' }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.operations() }),
+  })
+}

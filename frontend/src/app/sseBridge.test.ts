@@ -1,9 +1,9 @@
 import { QueryClient } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { queryKeys } from '@/shared/api'
+import { queryKeys, type SseEvent } from '@/shared/api'
 
-import { applySseInvalidation } from './sseBridge'
+import { applySseInvalidation, authPromptFromEvent } from './sseBridge'
 
 const REPO_A = 'repo-a'
 const REPO_B = 'repo-b'
@@ -86,5 +86,63 @@ describe('applySseInvalidation (docs/07 §3 mapping)', () => {
       .getAll()
       .every((query) => !query.state.isInvalidated)
     expect(allFresh).toBe(true)
+  })
+})
+
+describe('authPromptFromEvent (VCS_AUTH_REQUIRED → credential prompt)', () => {
+  const completed = (
+    error: { code: string; context?: Record<string, string> } | null,
+    state: 'SUCCEEDED' | 'FAILED' | 'CANCELLED' = 'FAILED',
+  ): SseEvent => ({
+    type: 'operation.completed',
+    data: { operationId: 'op-1', state, error },
+  })
+
+  it('raises a prompt for the failing remote', () => {
+    expect(
+      authPromptFromEvent(
+        completed({
+          code: 'VCS_AUTH_REQUIRED',
+          context: { host: 'github.com', protocol: 'https' },
+        }),
+      ),
+    ).toEqual({ operationId: 'op-1', host: 'github.com', protocol: 'https' })
+  })
+
+  it('defaults the protocol to https when the failure omits it', () => {
+    // The modal builds `protocol://host`; a blank protocol would read oddly.
+    expect(
+      authPromptFromEvent(
+        completed({ code: 'VCS_AUTH_REQUIRED', context: { host: 'example.com' } }),
+      ),
+    ).toEqual({ operationId: 'op-1', host: 'example.com', protocol: 'https' })
+  })
+
+  it('stays silent when there is no host to attach a credential to', () => {
+    expect(
+      authPromptFromEvent(completed({ code: 'VCS_AUTH_REQUIRED', context: {} })),
+    ).toBeNull()
+    expect(authPromptFromEvent(completed({ code: 'VCS_AUTH_REQUIRED' }))).toBeNull()
+  })
+
+  it('ignores other failures, successes and unrelated events', () => {
+    expect(
+      authPromptFromEvent(
+        completed({ code: 'VCS_NETWORK_ERROR', context: { host: 'github.com' } }),
+      ),
+    ).toBeNull()
+    // A success carrying context (it never should) must still not prompt.
+    expect(
+      authPromptFromEvent(
+        completed(
+          { code: 'VCS_AUTH_REQUIRED', context: { host: 'github.com' } },
+          'SUCCEEDED',
+        ),
+      ),
+    ).toBeNull()
+    expect(authPromptFromEvent(completed(null))).toBeNull()
+    expect(
+      authPromptFromEvent({ type: 'workingtree.changed', data: { repositoryId: REPO_A } }),
+    ).toBeNull()
   })
 })

@@ -6,6 +6,7 @@ import {
   SseClient,
   type SseEvent,
 } from '@/shared/api'
+import { useUiStore, type AuthPrompt } from '@/shared/lib/uiStore'
 
 /**
  * SSE -> TanStack Query invalidation mapping (docs/07 §3):
@@ -69,6 +70,23 @@ export function applySseInvalidation(
 }
 
 /**
+ * The credential prompt an SSE event calls for, or null.
+ *
+ * Only a `VCS_AUTH_REQUIRED` failure that names a host is actionable: the prompt
+ * exists to save a credential for that remote and retry, so with no host there
+ * is nothing to attach it to. Pure, so the mapping is unit-testable without a
+ * store or a live stream.
+ */
+export function authPromptFromEvent(event: SseEvent): AuthPrompt | null {
+  if (event.type !== 'operation.completed') return null
+  const { operationId, state, error } = event.data
+  if (state !== 'FAILED' || error?.code !== 'VCS_AUTH_REQUIRED') return null
+  const host = error.context?.host
+  if (!host) return null
+  return { operationId, host, protocol: error.context?.protocol ?? 'https' }
+}
+
+/**
  * Connects the SSE stream and wires every event into query invalidation.
  * Returns a cleanup function (used from an app-level effect).
  */
@@ -78,6 +96,10 @@ export function startSseBridge(queryClient: QueryClient): () => void {
   const client = new SseClient()
   const unsubscribe = client.onAny((event) => {
     applySseInvalidation(queryClient, event)
+    // A failed operation may be asking for credentials; raise the prompt so the
+    // user can supply them and retry, wherever they happen to be.
+    const prompt = authPromptFromEvent(event)
+    if (prompt) useUiStore.getState().promptForAuth(prompt)
   })
   client.connect()
 
