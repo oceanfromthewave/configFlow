@@ -34,6 +34,16 @@ public final class WindowsCredentialStore implements CredentialStore
 	{
 		String storeKey = TARGET_PREFIX + UUID.randomUUID();
 		byte[] blob = toUtf8(credential.secret());
+		if(blob.length > CredAdvapi32.CRED_MAX_CREDENTIAL_BLOB_SIZE)
+		{
+			// A secret past the store's limit is caller input, not a system fault: reject it
+			// as a 400 (IllegalArgumentException) instead of letting CredWriteW's
+			// ERROR_INVALID_PARAMETER surface as a 500. Scrub the copy on the way out.
+			Arrays.fill(blob, (byte) 0);
+			throw new IllegalArgumentException(
+					"secret exceeds the Windows credential blob limit (" + blob.length + " > "
+							+ CredAdvapi32.CRED_MAX_CREDENTIAL_BLOB_SIZE + " bytes)");
+		}
 		Memory mem = new Memory(blob.length);
 		try
 		{

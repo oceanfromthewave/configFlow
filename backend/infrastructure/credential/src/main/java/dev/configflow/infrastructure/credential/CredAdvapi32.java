@@ -36,6 +36,14 @@ interface CredAdvapi32 extends StdCallLibrary {
     /** Persist for this user across logon sessions on this machine. */
     int CRED_PERSIST_LOCAL_MACHINE = 2;
 
+    /**
+     * Largest {@code CredentialBlob} Windows accepts ({@code 5 * 512} bytes). A bigger
+     * secret makes {@code CredWriteW} fail with {@code ERROR_INVALID_PARAMETER}, which is
+     * a caller error, so the adapter rejects it up front rather than letting it read as a
+     * system failure.
+     */
+    int CRED_MAX_CREDENTIAL_BLOB_SIZE = 5 * 512;
+
     /** {@code GetLastError()} value when a target name has no stored credential. */
     int ERROR_NOT_FOUND = 1168;
 
