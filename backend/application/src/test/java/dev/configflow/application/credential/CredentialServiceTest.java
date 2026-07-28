@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -221,6 +222,13 @@ class CredentialServiceTest {
                             && r.protocol().equals(protocol)
                             && r.username().equals(username))
                     .findFirst();
+        }
+
+        @Override
+        public Optional<CredentialRef> findFor(String host, String protocol) {
+            return rows.values().stream()
+                    .filter(r -> r.matches(host, protocol))
+                    .max(Comparator.comparing(CredentialRef::createdAt));
         }
 
         @Override

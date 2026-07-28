@@ -1,5 +1,6 @@
 package dev.configflow.infrastructure.git;
 
+import dev.configflow.domain.credential.RemoteCredentialResolver;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
 import dev.configflow.domain.vcs.port.BranchOperations;
@@ -45,9 +46,21 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 		this(new GitRepositoryAccess());
 	}
 
+	/** Wires the resolver that turns a remote's host/protocol into stored credentials. */
+	public GitVcsProvider(RemoteCredentialResolver credentials)
+	{
+		this(new GitRepositoryAccess(), credentials);
+	}
+
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access));
+	}
+
+	private GitVcsProvider(GitRepositoryAccess access, RemoteCredentialResolver credentials)
+	{
+		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access),
+				new GitRemotes(access, credentials));
 	}
 
 	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes)

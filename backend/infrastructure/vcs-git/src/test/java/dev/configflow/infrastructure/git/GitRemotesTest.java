@@ -1,10 +1,13 @@
 package dev.configflow.infrastructure.git;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.configflow.domain.credential.Credential;
+import dev.configflow.domain.credential.RemoteCredentialResolver;
 import dev.configflow.domain.operation.OperationCancelledException;
 import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.vcs.exception.MergeConflictException;
@@ -25,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Constants;
@@ -197,6 +201,23 @@ class GitRemotesTest {
         // Letting JGit fail instead would name the local path, which explains nothing.
         assertTrue(failure.getMessage().contains("no-such-remote"),
                 () -> "should name the remote the user asked for: " + failure.getMessage());
+    }
+
+    // --- credentials -----------------------------------------------------
+
+    @Test
+    void aRemoteOperationWipesTheResolvedSecretOnceItIsDone() {
+        char[] secret = "s3cr3t".toCharArray();
+        RecordingResolver resolver = new RecordingResolver(secret);
+        GitRemotes withCredentials = new GitRemotes(access, resolver);
+
+        withCredentials.fetch(clone, new FetchRequest(null, false), OperationMonitor.noop());
+
+        assertTrue(resolver.consulted, "the resolver must be asked for the remote's credential");
+        // JGit's provider keeps the array we hand it, and clearing it in a finally zero-fills
+        // that same array — so nothing is left holding the secret after the transport is done.
+        assertArrayEquals(new char[secret.length], secret,
+                "the secret must be wiped once the transport has taken it");
     }
 
     // --- pull ------------------------------------------------------------
@@ -426,6 +447,23 @@ class GitRemotesTest {
             if (git.getRepository().resolve("HEAD") != null) {
                 git.reset().setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD).call();
             }
+        }
+    }
+
+    /** Hands back the very array the test holds, so the test can assert the wipe reached it. */
+    private static final class RecordingResolver implements RemoteCredentialResolver {
+
+        private final char[] secret;
+        private boolean consulted;
+
+        RecordingResolver(char[] secret) {
+            this.secret = secret;
+        }
+
+        @Override
+        public Optional<Credential> resolve(String host, String protocol) {
+            consulted = true;
+            return Optional.of(new Credential("github.com", "https", "user", secret));
         }
     }
 
