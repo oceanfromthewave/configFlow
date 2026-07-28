@@ -257,10 +257,9 @@ final class GitRemotes
 	RepositoryHandle cloneRepository(CloneRequest request, OperationMonitor monitor)
 	{
 		UsernamePasswordCredentialsProvider cp = credentialsFor(request.url());
-		try
+		try(Git git = Git.cloneRepository().setURI(request.url()).setDirectory(request.localPath().toFile()).setCredentialsProvider(cp)
+				.setProgressMonitor(new JGitProgressMonitor(monitor)).call())
 		{
-			Git.cloneRepository().setURI(request.url()).setDirectory(request.localPath().toFile()).setCredentialsProvider(cp)
-					.setProgressMonitor(new JGitProgressMonitor(monitor)).call().close();
 			return new RepositoryHandle(request.localPath(), VcsType.GIT);
 		}
 		catch(GitAPIException | RuntimeException e)
@@ -282,9 +281,8 @@ final class GitRemotes
 
 	RepositoryHandle init(Path path)
 	{
-		try
+		try(Git git = Git.init().setDirectory(path.toFile()).call())
 		{
-			Git.init().setDirectory(path.toFile()).call().close();
 			return new RepositoryHandle(path, VcsType.GIT);
 		}
 		catch(GitAPIException e)
@@ -435,8 +433,15 @@ final class GitRemotes
 		}
 		catch(URISyntaxException e)
 		{
-			// scp-style (git@host:path) and local paths are not URIs; the raw string is
-			// still the most useful thing to show.
+			// scp-style (git@host:path) is not a URI: pull the host from between the user@ and
+			// the first colon, so an SSH remote is keyed on its real host rather than the whole
+			// URL. Anything else (a local path) has no such shape and falls back to the raw string.
+			int at = target.indexOf('@');
+			int colon = target.indexOf(':', at + 1);
+			if(at >= 0 && colon > at + 1)
+			{
+				return target.substring(at + 1, colon);
+			}
 			return target;
 		}
 	}

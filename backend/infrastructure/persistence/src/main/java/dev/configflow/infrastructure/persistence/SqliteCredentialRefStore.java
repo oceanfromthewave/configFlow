@@ -83,7 +83,9 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 	public Optional<CredentialRef> findFor(String host, String protocol)
 	{
 		// Newest first so a rotated token (the latest row) is chosen over the stale one.
-		return queryOne(SELECT + " WHERE host = ? AND protocol = ? ORDER BY created_at DESC LIMIT 1", ps -> {
+		// Order by the parsed time, not the ISO text: Instant.toString() has a variable-width
+		// fraction, so a plain string sort can rank a whole-second row above a later fractional one.
+		return queryOne(SELECT + " WHERE host = ? AND protocol = ? ORDER BY julianday(created_at) DESC LIMIT 1", ps -> {
 			ps.setString(1, host == null ? null : host.toLowerCase());
 			ps.setString(2, protocol == null ? null : protocol.toLowerCase());
 		});
@@ -92,7 +94,8 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 	@Override
 	public List<CredentialRef> findAll()
 	{
-		String sql = SELECT + " ORDER BY created_at DESC";
+		// Parsed-time order (see findFor) so a variable-width ISO fraction can't misrank rows.
+		String sql = SELECT + " ORDER BY julianday(created_at) DESC";
 		try(Connection con = database.openConnection(); PreparedStatement ps = con.prepareStatement(sql); ResultSet rs = ps.executeQuery())
 		{
 			List<CredentialRef> result = new ArrayList<>();

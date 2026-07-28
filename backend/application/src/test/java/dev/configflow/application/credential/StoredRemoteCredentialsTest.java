@@ -114,7 +114,10 @@ class StoredRemoteCredentialsTest {
         @Override
         public Optional<Credential> find(String storeKey) {
             this.askedFor = storeKey;
-            return secret;
+            // Mirror the real store contract: the secret is the caller's to wipe, so hand back
+            // a copy rather than the array this stub keeps.
+            return secret.map(c ->
+                    new Credential(c.host(), c.protocol(), c.username(), c.secret().clone()));
         }
 
         @Override
