@@ -266,6 +266,22 @@ class SqlitePersistenceIntegrationTest {
     }
 
     @Test
+    void findForOrdersByActualTimeNotIsoStringLength() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        // Same second, but one timestamp has a fractional part and the other does not.
+        // Lexicographically "…00Z" sorts after "…00.500Z" (since '.' < 'Z'), so a plain string
+        // ORDER BY would wrongly pick the older whole-second row as the newest.
+        CredentialRef older = CredentialRef.issue(
+                "github.com", "https", "alice", "key-old", Instant.parse("2026-07-02T10:00:00Z"));
+        CredentialRef newer = CredentialRef.issue(
+                "github.com", "https", "bob", "key-new", Instant.parse("2026-07-02T10:00:00.500Z"));
+        store.save(older);
+        store.save(newer);
+
+        assertEquals(Optional.of(newer), store.findFor("github.com", "https"));
+    }
+
+    @Test
     void findForNormalisesHostAndProtocolCasing() {
         SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
         store.save(CredentialRef.issue("github.com", "https", "alice", "key-1", NOW));
