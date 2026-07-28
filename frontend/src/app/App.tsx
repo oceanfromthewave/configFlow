@@ -2,6 +2,7 @@ import { RepositoryPage } from '@/pages/RepositoryPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { WelcomePage } from '@/pages/WelcomePage'
 import { useUiStore } from '@/shared/lib/uiStore'
+import { AuthPromptModal } from '@/widgets/AuthPromptModal'
 import { StatusBar } from '@/widgets/StatusBar'
 import { TitleBar } from '@/widgets/TitleBar'
 
@@ -26,6 +27,7 @@ export function App() {
         )}
       </main>
       <StatusBar />
+      <AuthPromptModal />
     </div>
   )
 }
