@@ -2,6 +2,7 @@ import {useCommitChanges} from '@/entities/repository/api/repositories'
 import type {ChangeType, Revision} from '@/entities/repository/model/types'
 import {useT} from '@/shared/i18n'
 import {apiErrorKey} from '@/shared/lib/apiErrorMessage'
+import {useUiStore} from '@/shared/lib/uiStore'
 import {Badge, Spinner} from '@/shared/ui'
 import type {BadgeVariant} from '@/shared/ui'
 
@@ -39,7 +40,14 @@ export function CommitDetail({
     formatDate: (iso: string) => string
 }) {
     const t = useT()
+    const selectFile = useUiStore((s) => s.selectFile)
+    const selectedFile = useUiStore((s) => s.selectedFile)
     const changes = useCommitChanges(repositoryId, revision.id)
+
+    const isSelected = (path: string) =>
+        selectedFile?.kind === 'commit' &&
+        selectedFile.revision === revision.id &&
+        selectedFile.path === path
 
     return (
         <div className="flex h-full flex-col overflow-y-auto p-3 text-xs">
@@ -82,13 +90,28 @@ export function CommitDetail({
             ) : changes.data.length === 0 ? (
                 <p className="py-1 text-muted">{t('commit.changesEmpty')}</p>
             ) : (
-                <ul className="flex flex-col">
+                <ul className="flex flex-col" role="listbox" aria-label={t('commit.detailChangedFiles')}>
                     {changes.data.map((change) => {
                         const style = CHANGE_STYLE[change.type]
+                        const selected = isSelected(change.path)
+                        const select = () =>
+                            selectFile({kind: 'commit', path: change.path, revision: revision.id})
                         return (
                             <li
                                 key={change.path}
-                                className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-elevated"
+                                role="option"
+                                tabIndex={0}
+                                aria-selected={selected}
+                                className={`flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                                    selected ? 'bg-elevated ring-1 ring-accent/50' : 'hover:bg-elevated'
+                                }`}
+                                onClick={select}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        select()
+                                    }
+                                }}
                             >
                                 <Badge variant={style.variant}>{style.letter}</Badge>
                                 <span className="min-w-0 flex-1 truncate text-primary" title={change.path}>

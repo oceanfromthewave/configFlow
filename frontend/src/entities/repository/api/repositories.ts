@@ -338,6 +338,35 @@ export function useCommitChanges(
     })
 }
 
+/**
+ * Diff of one file inside a commit, against its first parent.
+ *
+ * `path` is part of the key so each file in the commit caches its own diff.
+ * Disabled until a repository, a revision and a path are all in hand.
+ */
+export function useCommitFileDiff(
+    repositoryId: string | null,
+    revisionId: string | null,
+    path: string | null,
+) {
+    return useQuery({
+        queryKey: [
+            ...queryKeys.repository(repositoryId ?? 'none'),
+            'commit',
+            revisionId ?? 'none',
+            'diff',
+            path,
+        ],
+        queryFn: () =>
+            apiFetch<FileDiff>(
+                `/repositories/${repositoryId}/commits/${revisionId}/diff?${new URLSearchParams({
+                    path: path ?? '',
+                })}`,
+            ),
+        enabled: repositoryId != null && revisionId != null && path != null,
+    })
+}
+
 /** Branches, tags and the HEAD pointer of one repository. */
 export function useRefs(repositoryId: string | null) {
     return useQuery({

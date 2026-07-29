@@ -204,7 +204,9 @@ export function WorkingTreePanel() {
     })
 
     const isSelected = (path: string, staged: boolean) =>
-        selectedFile?.path === path && selectedFile.staged === staged
+        selectedFile?.kind === 'working' &&
+        selectedFile.path === path &&
+        selectedFile.staged === staged
 
     const renderStaged = (change: FileChange) => {
         const style = CHANGE_STYLE[change.type]
@@ -216,7 +218,7 @@ export function WorkingTreePanel() {
                 variant={style.variant}
                 hint={change.oldPath ? `← ${change.oldPath}` : undefined}
                 selected={isSelected(change.path, true)}
-                onSelect={() => selectFile({path: change.path, staged: true})}
+                onSelect={() => selectFile({kind: 'working', path: change.path, staged: true})}
                 action={{
                     label: t('workingTree.unstageFile'),
                     symbol: '−',
@@ -237,7 +239,7 @@ export function WorkingTreePanel() {
                 variant={style.variant}
                 hint={change.oldPath ? `← ${change.oldPath}` : undefined}
                 selected={isSelected(change.path, false)}
-                onSelect={() => selectFile({path: change.path, staged: false})}
+                onSelect={() => selectFile({kind: 'working', path: change.path, staged: false})}
                 action={stageAction(change.path)}
             />
         )
@@ -251,7 +253,7 @@ export function WorkingTreePanel() {
             variant="conflicted"
             hint={t(RESOLUTION_KEY[file.resolution])}
             selected={isSelected(file.path, false)}
-            onSelect={() => selectFile({path: file.path, staged: false})}
+            onSelect={() => selectFile({kind: 'working', path: file.path, staged: false})}
             action={stageAction(file.path)}
         />
     )

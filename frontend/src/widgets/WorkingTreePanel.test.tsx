@@ -151,6 +151,7 @@ describe('WorkingTreePanel', () => {
 
     await userEvent.click(stagedRow)
     expect(useUiStore.getState().selectedFile).toEqual({
+      kind: 'working',
       path: 'both.txt',
       staged: true,
     })
@@ -158,6 +159,7 @@ describe('WorkingTreePanel', () => {
     // The same path appears on both sides and has a different diff on each.
     await userEvent.click(unstagedRow)
     expect(useUiStore.getState().selectedFile).toEqual({
+      kind: 'working',
       path: 'both.txt',
       staged: false,
     })

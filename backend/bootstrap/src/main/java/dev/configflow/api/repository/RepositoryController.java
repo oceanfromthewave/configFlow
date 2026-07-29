@@ -240,6 +240,12 @@ public class RepositoryController
 		return RevisionResponse.from(repositoryService.show(RepositoryId.of(id), new RevisionId(revision)));
 	}
 
+	@GetMapping("/{id}/commits/{revision}/diff")
+	public FileDiffResponse diffInCommit(@PathVariable String id, @PathVariable String revision, @RequestParam String path)
+	{
+		return FileDiffResponse.from(repositoryService.diffInCommit(RepositoryId.of(id), new RevisionId(revision), toPath(path)));
+	}
+
 	@GetMapping("/{id}/commits/{revision}/changes")
 	public List<FileChangeResponse> changes(@PathVariable String id, @PathVariable String revision)
 	{

@@ -1,4 +1,4 @@
-import {useFileDiff} from '@/entities/repository/api/repositories'
+import {useCommitFileDiff, useFileDiff} from '@/entities/repository/api/repositories'
 import type {DiffHunk} from '@/entities/repository/model/types'
 import {useT} from '@/shared/i18n'
 import {apiErrorKey} from '@/shared/lib/apiErrorMessage'
@@ -64,11 +64,16 @@ export function DiffPanel() {
     const t = useT()
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
     const selectedFile = useUiStore((s) => s.selectedFile)
-    const diff = useFileDiff(
-        repositoryId,
-        selectedFile?.path ?? null,
-        selectedFile?.staged ?? false,
-    )
+
+    // One panel, two sources. Both hooks run every render (hooks cannot be
+    // conditional) but each is disabled unless its own selection is active, so
+    // only the relevant request fires.
+    const working = selectedFile?.kind === 'working' ? selectedFile : null
+    const commit = selectedFile?.kind === 'commit' ? selectedFile : null
+    const workingDiff = useFileDiff(repositoryId, working?.path ?? null, working?.staged ?? false)
+    const commitDiff = useCommitFileDiff(
+        repositoryId, commit?.revision ?? null, commit?.path ?? null)
+    const diff = commit ? commitDiff : workingDiff
 
     if (selectedFile == null) {
         return (
@@ -101,9 +106,13 @@ export function DiffPanel() {
                         {t('diff.stats', {added, removed})}
                     </span>
                 ) : null}
-                <Badge variant={selectedFile.staged ? 'added' : 'modified'}>
-                    {selectedFile.staged ? t('diff.stagedSide') : t('diff.unstagedSide')}
-                </Badge>
+                {selectedFile.kind === 'commit' ? (
+                    <Badge variant="renamed">{selectedFile.revision.slice(0, 7)}</Badge>
+                ) : (
+                    <Badge variant={selectedFile.staged ? 'added' : 'modified'}>
+                        {selectedFile.staged ? t('diff.stagedSide') : t('diff.unstagedSide')}
+                    </Badge>
+                )}
             </header>
 
             <div className={cn('min-h-0 flex-1', diff.data ? 'overflow-auto' : 'overflow-hidden')}>
