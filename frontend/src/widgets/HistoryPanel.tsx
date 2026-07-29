@@ -2,6 +2,7 @@ import {useMemo, useState, type FormEvent} from 'react'
 
 import {useHistory} from '@/entities/repository/api/repositories'
 import {computeCommitGraph, type RowGraph} from '@/entities/repository/lib/commitGraph'
+import {CommitDetail} from '@/widgets/CommitDetail'
 import type {
     HistoryFilters,
     RefLabel,
@@ -115,16 +116,24 @@ function CommitRow({
                        formatDate,
                        graph,
                        laneCount,
+                       selected,
+                       onSelect,
                    }: {
     revision: Revision
     formatDate: (iso: string) => string
     graph?: RowGraph
     laneCount: number
+    selected: boolean
+    onSelect: () => void
 }) {
     return (
         <li
-            className="flex items-center gap-2 rounded px-2 hover:bg-elevated"
+            className={`flex cursor-pointer items-center gap-2 rounded px-2 ${
+                selected ? 'bg-elevated ring-1 ring-accent/50' : 'hover:bg-elevated'
+            }`}
             style={{height: ROW_HEIGHT}}
+            aria-current={selected}
+            onClick={onSelect}
         >
             <GraphColumn row={graph} laneCount={laneCount}/>
             <RefLabels labels={revision.labels}/>
@@ -156,6 +165,7 @@ export function HistoryPanel() {
     // Draft vs applied: typing must not refire the query on every keystroke.
     const [draft, setDraft] = useState<HistoryFilters>({author: '', message: ''})
     const [filters, setFilters] = useState<HistoryFilters>({})
+    const [selectedId, setSelectedId] = useState<string | null>(null)
 
     const history = useHistory(repositoryId, filters)
 
@@ -195,6 +205,9 @@ export function HistoryPanel() {
     }
 
     const hasDraft = Boolean(draft.author?.trim() || draft.message?.trim())
+    // The selection is held by id; if that commit is no longer in the loaded set
+    // (a filter narrowed it away), the detail pane falls back to its empty hint.
+    const selected = revisions.find((revision) => revision.id === selectedId) ?? null
 
     return (
         <div className="flex h-full flex-col">
@@ -226,49 +239,65 @@ export function HistoryPanel() {
                 ) : null}
             </form>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                {history.isPending ? (
-                    <div className="flex items-center gap-2 p-2 text-sm text-muted">
-                        <Spinner/>
-                        {t('history.loading')}
-                    </div>
-                ) : history.isError ? (
-                    <p className="p-2 text-sm text-vcs-deleted">
-                        {t('history.loadFailed')}: {t(apiErrorKey(history.error))}
-                    </p>
-                ) : revisions.length === 0 ? (
-                    <EmptyState
-                        title={t('history.emptyTitle')}
-                        description={t('history.emptyDescription')}
-                    />
-                ) : (
-                    <>
-                        <ul className="flex flex-col">
-                            {revisions.map((revision, index) => (
-                                <CommitRow
-                                    key={revision.id}
-                                    revision={revision}
-                                    formatDate={formatDate}
-                                    graph={graph.rows[index]}
-                                    laneCount={graph.laneCount}
-                                />
-                            ))}
-                        </ul>
-                        {history.hasNextPage ? (
-                            <div className="flex justify-center p-2">
-                                <Button
-                                    size="sm"
-                                    disabled={history.isFetchingNextPage}
-                                    onClick={() => history.fetchNextPage()}
-                                >
-                                    {history.isFetchingNextPage
-                                        ? t('history.loadingMore')
-                                        : t('history.loadMore')}
-                                </Button>
-                            </div>
-                        ) : null}
-                    </>
-                )}
+            <div className="flex min-h-0 flex-1">
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                    {history.isPending ? (
+                        <div className="flex items-center gap-2 p-2 text-sm text-muted">
+                            <Spinner/>
+                            {t('history.loading')}
+                        </div>
+                    ) : history.isError ? (
+                        <p className="p-2 text-sm text-vcs-deleted">
+                            {t('history.loadFailed')}: {t(apiErrorKey(history.error))}
+                        </p>
+                    ) : revisions.length === 0 ? (
+                        <EmptyState
+                            title={t('history.emptyTitle')}
+                            description={t('history.emptyDescription')}
+                        />
+                    ) : (
+                        <>
+                            <ul className="flex flex-col">
+                                {revisions.map((revision, index) => (
+                                    <CommitRow
+                                        key={revision.id}
+                                        revision={revision}
+                                        formatDate={formatDate}
+                                        graph={graph.rows[index]}
+                                        laneCount={graph.laneCount}
+                                        selected={revision.id === selectedId}
+                                        onSelect={() => setSelectedId(revision.id)}
+                                    />
+                                ))}
+                            </ul>
+                            {history.hasNextPage ? (
+                                <div className="flex justify-center p-2">
+                                    <Button
+                                        size="sm"
+                                        disabled={history.isFetchingNextPage}
+                                        onClick={() => history.fetchNextPage()}
+                                    >
+                                        {history.isFetchingNextPage
+                                            ? t('history.loadingMore')
+                                            : t('history.loadMore')}
+                                    </Button>
+                                </div>
+                            ) : null}
+                        </>
+                    )}
+                </div>
+
+                <aside className="hidden w-96 shrink-0 border-l border-border md:block">
+                    {selected ? (
+                        <CommitDetail
+                            repositoryId={repositoryId}
+                            revision={selected}
+                            formatDate={formatDate}
+                        />
+                    ) : (
+                        <p className="p-4 text-xs text-muted">{t('commit.detailEmpty')}</p>
+                    )}
+                </aside>
             </div>
         </div>
     )

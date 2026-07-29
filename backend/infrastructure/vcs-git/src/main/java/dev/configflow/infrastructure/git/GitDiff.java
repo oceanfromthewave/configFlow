@@ -1,11 +1,7 @@
 package dev.configflow.infrastructure.git;
 
 import dev.configflow.domain.vcs.exception.VcsException;
-import dev.configflow.domain.vcs.model.ChangeType;
-import dev.configflow.domain.vcs.model.DiffHunk;
-import dev.configflow.domain.vcs.model.FileDiff;
-import dev.configflow.domain.vcs.model.RepositoryHandle;
-import dev.configflow.domain.vcs.model.RevisionId;
+import dev.configflow.domain.vcs.model.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -27,12 +23,14 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.patch.FileHeader;
+import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.AbstractTreeIterator;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
+import org.eclipse.jgit.util.io.DisabledOutputStream;
 
 /**
  * Structured diffs for Git.
@@ -111,6 +109,44 @@ final class GitDiff
 		}
 	}
 
+	List<FileChange> changesIn(RepositoryHandle repo, RevisionId revision)
+	{
+		try(Git git = access.open(repo))
+		{
+			Repository repository = git.getRepository();
+			ObjectId commitId = repository.resolve(revision.value());
+			if(commitId == null)
+			{
+				throw new NoSuchElementException("Revision not found: " + revision.value());
+			}
+			AbstractTreeIterator newSide;
+			AbstractTreeIterator oldSide;
+			try(RevWalk walk = new RevWalk(repository))
+			{
+				RevCommit commit = walk.parseCommit(commitId);
+				newSide = treeOf(repository, commitId);
+				oldSide = commit.getParentCount() == 0 ? new EmptyTreeIterator() : treeOf(repository, commit.getParent(0).getId());
+			}
+			return changeList(repository, oldSide, newSide);
+		}
+		catch(MissingObjectException | IncorrectObjectTypeException e)
+		{
+			throw new NoSuchElementException("Revision not found in " + repo.localPath());
+		}
+		catch(RevisionSyntaxException e)
+		{
+			throw new IllegalArgumentException("Not a valid revision: " + e.getMessage(), e);
+		}
+		catch(AmbiguousObjectException e)
+		{
+			throw new IllegalArgumentException("Ambiguous revision: " + e.getMessage(), e);
+		}
+		catch(IOException e)
+		{
+			throw new VcsException("Failed to list changes in " + revision.value() + " for " + repo.localPath(), e);
+		}
+	}
+
 	/** Full file content as of a revision; empty when the file did not exist then. */
 	String contentAt(RepositoryHandle repo, RevisionId revision, Path path)
 	{
@@ -179,9 +215,30 @@ final class GitDiff
 		}
 	}
 
+	private static List<FileChange> changeList(Repository repository, AbstractTreeIterator oldSide, AbstractTreeIterator newSide) throws IOException
+	{
+		List<FileChange> changes = new ArrayList<>();
+		try(DiffFormatter formatter = new DiffFormatter(DisabledOutputStream.INSTANCE))
+		{
+			formatter.setRepository(repository);
+			formatter.setDetectRenames(true);
+			for(DiffEntry entry : formatter.scan(oldSide, newSide))
+			{
+				changes.add(toFileChange(entry));
+			}
+		}
+		return changes;
+	}
+
+	private static FileChange toFileChange(DiffEntry entry)
+	{
+		ChangeType type = typeOf(entry);
+		Path path = type == ChangeType.DELETED ? Path.of(entry.getOldPath()) : Path.of(entry.getNewPath());
+		return new FileChange(path, type, oldPathOf(entry), false, null);
+	}
+
 	/**
-	 * JGit does not fail on binary content: it reports it through the patch type, and
-	 * would otherwise render an unusable {@code Binary files differ} body.
+	 * JGit does not fail on binary content: it reports it through the patch type, and would otherwise render an unusable {@code Binary files differ} body.
 	 */
 	private static boolean isBinary(DiffFormatter formatter, DiffEntry entry) throws IOException
 	{

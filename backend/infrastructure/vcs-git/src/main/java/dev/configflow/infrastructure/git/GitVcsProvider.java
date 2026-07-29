@@ -26,8 +26,9 @@ import org.eclipse.jgit.util.FS;
  * <p>Implements the operation ports Git actually supports; callers discover them by
  * checking {@link #capabilities()} and narrowing with {@code instanceof}.</p>
  */
-public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations,
-		BranchOperations, RemoteSyncOperations, RepositoryOperations
+public final class GitVcsProvider
+		implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations, BranchOperations, RemoteSyncOperations,
+		RepositoryOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -167,6 +168,12 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 	}
 
 	@Override
+	public List<FileChange> changesIn(RepositoryHandle repo, RevisionId revision)
+	{
+		return diffs.changesIn(repo, revision);
+	}
+
+	@Override
 	public String contentAt(RepositoryHandle repo, RevisionId revision, Path path)
 	{
 		return diffs.contentAt(repo, revision, path);
@@ -181,7 +188,7 @@ public final class GitVcsProvider implements VcsProvider, WorkingTreeOperations,
 	@Override
 	public List<Revision> compare(RepositoryHandle repo, String base, String target)
 	{
-		return refs.compare(repo,base,target);
+		return refs.compare(repo, base, target);
 	}
 
 	@Override
