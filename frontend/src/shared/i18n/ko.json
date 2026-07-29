@@ -61,6 +61,8 @@
   "branch.checkout": "체크아웃",
   "branch.checkoutFailed": "체크아웃하지 못했습니다",
   "branch.switching": "전환 중…",
+  "branch.mergeInto": "{source}을(를) 현재 브랜치에 병합",
+  "branch.mergeFailed": "병합하지 못했습니다",
   "bottomPanel.logEmpty": "로그가 없습니다.",
   "statusBar.noBranch": "브랜치 없음",
   "statusBar.backendConnected": "백엔드 연결됨",

@@ -17,6 +17,7 @@ import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
+import dev.configflow.domain.vcs.exception.MergeConflictException;
 import dev.configflow.domain.vcs.model.MergeRequest;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.VcsType;
@@ -170,6 +171,52 @@ class BranchServiceTest {
                 history.saved.values().iterator().next().type());
     }
 
+    @Test
+    void merge_passesTheSourceAndFlags() {
+        BranchService service = serviceFor(provider);
+        RepositoryId id = register();
+
+        service.merge(id, "feature/x", true, false);
+
+        assertEquals(List.of("merge:feature/x:true:false"), provider.calls);
+        assertEquals(OperationType.MERGE,
+                history.saved.values().iterator().next().type());
+    }
+
+    @Test
+    void merge_trimsTheSourceBeforeHandingItOver() {
+        BranchService service = serviceFor(provider);
+        RepositoryId id = register();
+
+        service.merge(id, "  feature/x  ", false, true);
+
+        assertEquals(List.of("merge:feature/x:false:true"), provider.calls);
+    }
+
+    @Test
+    void merge_rejectsABlankSourceWithoutQueueingAnything() {
+        BranchService service = serviceFor(provider);
+        RepositoryId id = register();
+
+        assertThrows(IllegalArgumentException.class, () -> service.merge(id, "  ", false, false));
+        assertThrows(IllegalArgumentException.class, () -> service.merge(id, null, false, false));
+        assertTrue(provider.calls.isEmpty());
+        assertTrue(history.saved.isEmpty(), "a rejected request must not become an operation");
+    }
+
+    @Test
+    void merge_conflictIsRecordedOnTheOperationRatherThanThrown() {
+        // A content conflict is not an error the caller can prevent — the working tree is
+        // left conflicted and the failure rides the operation, not the submit call.
+        provider.failWith = new MergeConflictException(List.of(Path.of("app.txt")));
+        BranchService service = serviceFor(provider);
+        RepositoryId id = register();
+
+        Operation operation = service.merge(id, "feature/x", false, false);
+
+        assertEquals(OperationState.FAILED, history.saved.get(operation.id()).state());
+    }
+
     // --- fakes -----------------------------------------------------------
 
     private static final class FakeBranchProvider implements VcsProvider, BranchOperations {
@@ -219,7 +266,11 @@ class BranchServiceTest {
 
         @Override
         public void merge(RepositoryHandle repo, MergeRequest request) {
-            calls.add("merge:" + request.source());
+            if (failWith != null) {
+                throw failWith;
+            }
+            calls.add("merge:" + request.source()
+                    + ":" + request.fastForwardOnly() + ":" + request.squash());
         }
     }
 

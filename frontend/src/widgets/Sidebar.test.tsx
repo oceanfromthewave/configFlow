@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -207,6 +207,65 @@ describe('Sidebar', () => {
     )
 
     expect(await screen.findByText(/체크아웃하지 못했습니다/)).toBeInTheDocument()
+  })
+
+  it('merges a branch into the current one from its context menu', async () => {
+    const calls = stubRefs([
+      { kind: 'HEAD', name: 'main' },
+      { kind: 'BRANCH', name: 'main' },
+      { kind: 'BRANCH', name: 'feature/x' },
+    ])
+
+    renderSidebar()
+    fireEvent.contextMenu(
+      await screen.findByRole('button', { name: '체크아웃: feature/x' }),
+    )
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /feature\/x/ }),
+    )
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].url).toContain('/repositories/repo-1/merge')
+    expect(calls[0].body).toEqual({ source: 'feature/x' })
+  })
+
+  it('does not offer to merge the current branch into itself', async () => {
+    stubRefs([
+      { kind: 'HEAD', name: 'main' },
+      { kind: 'BRANCH', name: 'main' },
+      { kind: 'BRANCH', name: 'feature/x' },
+    ])
+
+    renderSidebar()
+    // Wait for the list before touching it: until refs load the section is a spinner.
+    await screen.findByRole('button', { name: '체크아웃: feature/x' })
+
+    // The current branch renders as a plain row, so right-clicking it opens nothing.
+    fireEvent.contextMenu(within(sectionOf('브랜치')).getByText('main'))
+
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
+  })
+
+  it('reports a failed merge with a translated message', async () => {
+    stubRefs(
+      [
+        { kind: 'HEAD', name: 'main' },
+        { kind: 'BRANCH', name: 'main' },
+        { kind: 'BRANCH', name: 'feature/x' },
+      ],
+      200,
+      409,
+    )
+
+    renderSidebar()
+    fireEvent.contextMenu(
+      await screen.findByRole('button', { name: '체크아웃: feature/x' }),
+    )
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /feature\/x/ }),
+    )
+
+    expect(await screen.findByText(/병합하지 못했습니다/)).toBeInTheDocument()
   })
 
   it('reports a failure without hiding the workspace links', async () => {

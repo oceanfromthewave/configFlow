@@ -132,6 +132,57 @@ class BranchControllerTest {
     }
 
     @Test
+    void merge_answers202WithTheQueuedOperation() throws Exception {
+        when(branchService.merge(any(), any(), anyBoolean(), anyBoolean()))
+                .thenReturn(queued(OperationType.MERGE));
+        String id = UUID.randomUUID().toString();
+
+        mvc.perform(post("/api/v1/repositories/" + id + "/merge")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"source\":\"feature/x\",\"fastForwardOnly\":true}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.type").value("MERGE"))
+                .andExpect(jsonPath("$.state").value("QUEUED"));
+
+        verify(branchService).merge(eq(RepositoryId.of(id)), eq("feature/x"), eq(true), eq(false));
+    }
+
+    @Test
+    void merge_omittedFlagsDefaultToFalse() throws Exception {
+        when(branchService.merge(any(), any(), anyBoolean(), anyBoolean()))
+                .thenReturn(queued(OperationType.MERGE));
+
+        mvc.perform(post("/api/v1/repositories/" + UUID.randomUUID() + "/merge")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"source\":\"feature/x\"}"))
+                .andExpect(status().isAccepted());
+
+        verify(branchService).merge(any(), eq("feature/x"), eq(false), eq(false));
+    }
+
+    @Test
+    void merge_missingBodyIs400() throws Exception {
+        mvc.perform(post("/api/v1/repositories/" + UUID.randomUUID() + "/merge")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(branchService, never()).merge(any(), any(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
+    void merge_blankSourceIs400() throws Exception {
+        when(branchService.merge(any(), any(), anyBoolean(), anyBoolean()))
+                .thenThrow(new IllegalArgumentException("'source' must not be blank"));
+
+        mvc.perform(post("/api/v1/repositories/" + UUID.randomUUID() + "/merge")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"source\":\"  \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void deleteBranch_handlesASlashInTheName() throws Exception {
         when(branchService.deleteBranch(any(), any(), anyBoolean(), anyBoolean()))
                 .thenReturn(queued(OperationType.BRANCH_DELETE));
