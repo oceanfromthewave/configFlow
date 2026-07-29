@@ -1,6 +1,7 @@
 package dev.configflow.infrastructure.git;
 
 import dev.configflow.domain.credential.RemoteCredentialResolver;
+import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
 import dev.configflow.domain.vcs.port.BranchOperations;
@@ -171,6 +172,12 @@ public final class GitVcsProvider
 	public List<FileChange> changesIn(RepositoryHandle repo, RevisionId revision)
 	{
 		return diffs.changesIn(repo, revision);
+	}
+
+	@Override
+	public FileDiff diffInCommit(RepositoryHandle repo, RevisionId revision, Path path)
+	{
+		return diffs.diffInCommit(repo, revision, path);
 	}
 
 	@Override

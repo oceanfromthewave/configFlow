@@ -170,6 +170,34 @@ class RepositoryControllerTest {
     }
 
     @Test
+    void commitDiff_returnsAFileDiffAsJson() throws Exception {
+        FileDiff diff = new FileDiff(
+                Path.of("src/app.txt"), null, ChangeType.MODIFIED, false,
+                List.of(new DiffHunk(1, 1, 1, 2, List.of(" one", "+two"))));
+        when(repositoryService.diffInCommit(any(), any(), any())).thenReturn(diff);
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/abc123/diff")
+                        .param("path", "src/app.txt"))
+                .andExpect(status().isOk())
+                // Always '/', even though Path renders '\' on Windows.
+                .andExpect(jsonPath("$.path").value("src/app.txt"))
+                .andExpect(jsonPath("$.type").value("MODIFIED"))
+                .andExpect(jsonPath("$.binary").value(false))
+                .andExpect(jsonPath("$.hunks[0].lines[1]").value("+two"));
+    }
+
+    @Test
+    void commitDiff_unknownRevisionIs404() throws Exception {
+        when(repositoryService.diffInCommit(any(), any(), any()))
+                .thenThrow(new NoSuchElementException("Revision not found"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/deadbeef/diff")
+                        .param("path", "src/app.txt"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
     void stage_returns204AndForwardsThePaths() throws Exception {
         String id = UUID.randomUUID().toString();
 

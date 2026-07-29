@@ -14,13 +14,14 @@ export type BottomPanelTab = 'console' | 'operations' | 'log'
 /**
  * File whose diff the right-hand panel shows.
  *
- * `staged` picks the side being compared, not merely which list it came from:
- * the same path can differ from HEAD and from the index at the same time.
+ * Two sources feed the same panel. A working-tree file carries `staged`, which
+ * picks the side being compared (the same path can differ from HEAD and from
+ * the index at once); a committed file carries the `revision` it belongs to,
+ * diffed against that commit's first parent.
  */
-export interface SelectedFile {
-  path: string
-  staged: boolean
-}
+export type SelectedFile =
+  | {kind: 'working'; path: string; staged: boolean}
+  | {kind: 'commit'; path: string; revision: string}
 
 /**
  * A credential prompt raised when a queued operation fails with

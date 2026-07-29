@@ -75,7 +75,7 @@ describe('DiffPanel', () => {
   })
 
   it('renders hunk lines with independent old and new line numbers', async () => {
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: false } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: false } })
     stubDiff(modified)
 
     renderPanel()
@@ -96,7 +96,7 @@ describe('DiffPanel', () => {
   })
 
   it('summarises the added and removed line counts', async () => {
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: false } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: false } })
     stubDiff(modified)
 
     renderPanel()
@@ -105,7 +105,7 @@ describe('DiffPanel', () => {
   })
 
   it('requests the staged side when the selection is staged', async () => {
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: true } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: true } })
     const urls = stubDiff(modified)
 
     renderPanel()
@@ -117,21 +117,21 @@ describe('DiffPanel', () => {
   })
 
   it('refetches when the selected side changes', async () => {
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: false } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: false } })
     const urls = stubDiff(modified)
 
     renderPanel()
     await waitFor(() => expect(urls).toHaveLength(1))
 
     // The same path has two different diffs, so the side must be part of the key.
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: true } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: true } })
 
     await waitFor(() => expect(urls).toHaveLength(2))
     expect(urls[1]).toContain('staged=true')
   })
 
   it('explains a binary file instead of rendering it', async () => {
-    useUiStore.setState({ selectedFile: { path: 'logo.png', staged: true } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'logo.png', staged: true } })
     stubDiff({
       path: 'logo.png',
       oldPath: null,
@@ -146,7 +146,7 @@ describe('DiffPanel', () => {
   })
 
   it('explains an unchanged file', async () => {
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: true } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: true } })
     stubDiff({
       path: 'src/app.ts',
       oldPath: null,
@@ -161,7 +161,7 @@ describe('DiffPanel', () => {
   })
 
   it('reports a failure with a translated message', async () => {
-    useUiStore.setState({ selectedFile: { path: 'src/app.ts', staged: false } })
+    useUiStore.setState({ selectedFile: { kind: 'working', path: 'src/app.ts', staged: false } })
     stubDiff({ code: 'NOT_FOUND' }, 404)
 
     renderPanel()

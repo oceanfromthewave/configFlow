@@ -358,6 +358,55 @@ class GitDiffTest {
                 () -> diffs.changesIn(handle, new RevisionId("a b")));
     }
 
+    // --- commit file diff ------------------------------------------------
+
+    @Test
+    void diffInCommit_showsAFileChangeAgainstTheFirstParent() throws Exception {
+        commitFile("app.txt", "one\n");
+        RevisionId second = commitFile("app.txt", "one\ntwo\n");
+
+        FileDiff diff = diffs.diffInCommit(handle, second, Path.of("app.txt"));
+
+        assertEquals(ChangeType.MODIFIED, diff.type());
+        assertTrue(linesOf(diff).contains("+two"));
+    }
+
+    @Test
+    void diffInCommit_onARootCommitShowsTheFileAsAdded() throws Exception {
+        RevisionId root = commitFile("only.txt", "hello\n");
+
+        FileDiff diff = diffs.diffInCommit(handle, root, Path.of("only.txt"));
+
+        assertEquals(ChangeType.ADDED, diff.type());
+        assertTrue(linesOf(diff).contains("+hello"));
+    }
+
+    @Test
+    void diffInCommit_returnsAnEmptyDiffForAFileTheCommitDidNotTouch() throws Exception {
+        commitFile("stable.txt", "unchanged\n");
+        RevisionId later = commitFile("other.txt", "new file\n");
+
+        FileDiff diff = diffs.diffInCommit(handle, later, Path.of("stable.txt"));
+
+        assertTrue(diff.hunks().isEmpty());
+    }
+
+    @Test
+    void diffInCommit_unknownRevisionIsNotFound() throws Exception {
+        commitFile("app.txt", "one\n");
+
+        assertThrows(NoSuchElementException.class,
+                () -> diffs.diffInCommit(handle, new RevisionId("0".repeat(40)), Path.of("app.txt")));
+    }
+
+    @Test
+    void diffInCommit_malformedRevisionIsRejectedAsBadInput() throws Exception {
+        commitFile("app.txt", "one\n");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> diffs.diffInCommit(handle, new RevisionId("a b"), Path.of("app.txt")));
+    }
+
     // --- fixture helpers -------------------------------------------------
 
     private static FileChange byPath(List<FileChange> changes, String path) {

@@ -20,6 +20,8 @@ public interface DiffOperations {
 
     List<FileChange> changesIn(RepositoryHandle repo, RevisionId revision);
 
+    FileDiff diffInCommit(RepositoryHandle repo, RevisionId revision, Path path);
+
     /** Full content of a file as of the given revision. */
     String contentAt(RepositoryHandle repo, RevisionId revision, Path path);
 }

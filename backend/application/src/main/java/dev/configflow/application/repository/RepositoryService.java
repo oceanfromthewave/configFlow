@@ -180,6 +180,14 @@ public final class RepositoryService
 		return opened.operations().changesIn(opened.handle(), revision);
 	}
 
+	public FileDiff diffInCommit(RepositoryId id, RevisionId revision, Path path)
+	{
+		Objects.requireNonNull(revision, "revision");
+		Path safePath = requirePath(path);
+		VcsAccess.Opened<DiffOperations> opened = access.open(id, DiffOperations.class);
+		return opened.operations().diffInCommit(opened.handle(), revision, safePath);
+	}
+
 	/**
 	 * All branches and tags, plus one entry naming what HEAD points at.
 	 *

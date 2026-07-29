@@ -147,6 +147,44 @@ final class GitDiff
 		}
 	}
 
+	FileDiff diffInCommit(RepositoryHandle repo, RevisionId revision, Path path)
+	{
+		try(Git git = access.open(repo))
+		{
+			Repository repository = git.getRepository();
+			ObjectId commitId = repository.resolve(revision.value());
+			if(commitId == null)
+			{
+				throw new NoSuchElementException("Revision not found: " + revision.value());
+			}
+			AbstractTreeIterator newSide;
+			AbstractTreeIterator oldSide;
+			try(RevWalk walk = new RevWalk(repository))
+			{
+				RevCommit commit = walk.parseCommit(commitId);
+				newSide = treeOf(repository, commitId);
+				oldSide = commit.getParentCount() == 0 ? new EmptyTreeIterator() : treeOf(repository, commit.getParent(0).getId());
+			}
+			return diff(repository, oldSide, newSide, path);
+		}
+		catch(MissingObjectException | IncorrectObjectTypeException e)
+		{
+			throw new NoSuchElementException("Revision not found in " + repo.localPath());
+		}
+		catch(RevisionSyntaxException e)
+		{
+			throw new IllegalArgumentException("Not a valid revision: " + e.getMessage(), e);
+		}
+		catch(AmbiguousObjectException e)
+		{
+			throw new IllegalArgumentException("Ambiguous revision: " + e.getMessage(), e);
+		}
+		catch(IOException e)
+		{
+			throw new VcsException("Failed to diff " + path + " in " + revision.value(), e);
+		}
+	}
+
 	/** Full file content as of a revision; empty when the file did not exist then. */
 	String contentAt(RepositoryHandle repo, RevisionId revision, Path path)
 	{
