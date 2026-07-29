@@ -13,8 +13,8 @@ const PROMPT: AuthPrompt = {
   protocol: 'https',
 }
 
-function renderModal(prompt: AuthPrompt | null) {
-  useUiStore.setState({ authPrompt: prompt })
+function renderModal(prompts: AuthPrompt[]) {
+  useUiStore.setState({ authPrompts: prompts })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -95,18 +95,18 @@ function stubAuthApi(options: { credStatus?: number; retryStatus?: number } = {}
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  useUiStore.setState({ authPrompt: null })
+  useUiStore.setState({ authPrompts: [] })
 })
 
 describe('AuthPromptModal', () => {
   it('renders nothing until an operation asks for credentials', () => {
-    renderModal(null)
+    renderModal([])
 
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('names the remote that rejected the request', () => {
-    renderModal(PROMPT)
+    renderModal([PROMPT])
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText(/https:\/\/github\.com/)).toBeInTheDocument()
@@ -115,7 +115,7 @@ describe('AuthPromptModal', () => {
   it('saves a credential for the remote, then retries that same operation', async () => {
     const calls = stubAuthApi()
 
-    renderModal(PROMPT)
+    renderModal([PROMPT])
     await userEvent.type(screen.getByLabelText('사용자 이름'), 'alice')
     await userEvent.type(screen.getByLabelText('비밀번호 / 토큰'), 'tok')
     await userEvent.click(screen.getByRole('button', { name: '저장 후 재시도' }))
@@ -142,7 +142,7 @@ describe('AuthPromptModal', () => {
   it('sends no username field for token-only auth', async () => {
     const calls = stubAuthApi()
 
-    renderModal(PROMPT)
+    renderModal([PROMPT])
     await userEvent.type(screen.getByLabelText('비밀번호 / 토큰'), 'ghp_token')
     await userEvent.click(screen.getByRole('button', { name: '저장 후 재시도' }))
 
@@ -155,7 +155,7 @@ describe('AuthPromptModal', () => {
   it('keeps the prompt open and explains when the credential is rejected', async () => {
     const calls = stubAuthApi({ credStatus: 500 })
 
-    renderModal(PROMPT)
+    renderModal([PROMPT])
     await userEvent.type(screen.getByLabelText('비밀번호 / 토큰'), 'tok')
     await userEvent.click(screen.getByRole('button', { name: '저장 후 재시도' }))
 
@@ -168,15 +168,30 @@ describe('AuthPromptModal', () => {
   it('dismisses without touching the network when cancelled', async () => {
     const calls = stubAuthApi()
 
-    renderModal(PROMPT)
+    renderModal([PROMPT])
     await userEvent.click(screen.getByRole('button', { name: '취소' }))
 
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(calls).toHaveLength(0)
   })
 
+  it('works through concurrent failures one at a time without losing any', async () => {
+    stubAuthApi()
+    const second: AuthPrompt = { operationId: 'op-2', host: 'gitlab.com', protocol: 'https' }
+    renderModal([PROMPT, second])
+
+    // The first failure is shown; the second waits behind it.
+    expect(screen.getByText(/https:\/\/github\.com/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '취소' }))
+
+    // The earlier prompt is gone, but the queued one takes its place rather than
+    // the second failure being silently dropped.
+    expect(screen.getByText(/https:\/\/gitlab\.com/)).toBeInTheDocument()
+  })
+
   it('keeps save-and-retry disabled until a secret is entered', async () => {
-    renderModal(PROMPT)
+    renderModal([PROMPT])
 
     const submit = screen.getByRole('button', { name: '저장 후 재시도' })
     expect(submit).toBeDisabled()

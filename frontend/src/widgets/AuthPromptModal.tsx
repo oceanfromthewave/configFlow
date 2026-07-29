@@ -21,10 +21,12 @@ const inputClass =
  * closed, and it renders nothing until one is waiting.
  */
 export function AuthPromptModal() {
-  const prompt = useUiStore((s) => s.authPrompt)
+  // Head of the queue: the oldest unhandled failure. Dismissing it surfaces the
+  // next, so a burst of auth failures is worked through one at a time.
+  const prompt = useUiStore((s) => s.authPrompts[0])
   if (!prompt) return null
-  // Re-key on the operation so a second failure opens an empty form instead of
-  // inheriting whatever was half-typed for the first.
+  // Re-key on the operation so the next prompt opens an empty form instead of
+  // inheriting whatever was half-typed for the previous one.
   return <AuthPromptDialog key={prompt.operationId} prompt={prompt} />
 }
 
