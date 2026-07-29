@@ -83,8 +83,8 @@ public class BranchController
 		{
 			throw new IllegalArgumentException("Request body must contain a 'source' field");
 		}
-		return AcceptedResponse.from(branchService.merge(RepositoryId.of(id), request.source(), Boolean.TRUE.equals(request.fastForwardOnly()),
-				Boolean.TRUE.equals(request.squash())));
+		return AcceptedResponse.from(branchService.merge(RepositoryId.of(id), request.source(),
+				request.fastForwardOnly(), request.squash()));
 	}
 
 	/**
