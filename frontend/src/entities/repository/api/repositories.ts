@@ -28,6 +28,20 @@ interface MergePayload {
     squash?: boolean
 }
 
+export interface CreateBranchPayload {
+    repositoryId: string
+    name: string
+    startPoint?: string
+    checkout?: boolean
+}
+
+export interface DeleteBranchPayload {
+    repositoryId: string
+    name: string
+    remote?: boolean
+    force?: boolean
+}
+
 /**
  * Runs one of the remote commands.
  *
@@ -38,7 +52,7 @@ interface MergePayload {
 function useRemoteCommand<T>(command: 'fetch' | 'pull' | 'push') {
     const queryClient = useQueryClient()
     return useMutation({
-        mutationFn: ({repositoryId, ...body}: T & {repositoryId: string}) =>
+        mutationFn: ({repositoryId, ...body}: T & { repositoryId: string }) =>
             apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/${command}`, {
                 method: 'POST',
                 body,
@@ -50,17 +64,17 @@ function useRemoteCommand<T>(command: 'fetch' | 'pull' | 'push') {
 
 /** Downloads new revisions without touching the working tree. */
 export function useFetch() {
-    return useRemoteCommand<{prune?: boolean}>('fetch')
+    return useRemoteCommand<{ prune?: boolean }>('fetch')
 }
 
 /** Fetch plus integrate into the current branch. */
 export function usePull() {
-    return useRemoteCommand<{strategy?: 'MERGE' | 'REBASE'}>('pull')
+    return useRemoteCommand<{ strategy?: 'MERGE' | 'REBASE' }>('pull')
 }
 
 /** Uploads local commits. */
 export function usePush() {
-    return useRemoteCommand<{forceWithLease?: boolean; tags?: boolean}>('push')
+    return useRemoteCommand<{ forceWithLease?: boolean; tags?: boolean }>('push')
 }
 
 export interface ClonePayload {
@@ -142,6 +156,48 @@ export function useMerge() {
                 method: 'POST',
                 body: {source, fastForwardOnly, squash},
             }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/**
+ * Creates a branch, optionally from a specific start point and optionally
+ * checking it out right away.
+ */
+export function useCreateBranch() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, name, startPoint, checkout}: CreateBranchPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/branches`, {
+                method: 'POST',
+                body: {name, startPoint, checkout},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/**
+ * Deletes a branch.
+ *
+ * The name is sent as-is in the path (branch names may contain slashes, e.g.
+ * `feature/x`), matching the backend's `{*name}` wildcard which expects the
+ * literal separator rather than a percent-encoded one.
+ */
+export function useDeleteBranch() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, name, remote, force}: DeleteBranchPayload) => {
+            const params = new URLSearchParams()
+            if (remote) params.set('remote', 'true')
+            if (force) params.set('force', 'true')
+            const query = params.toString()
+            return apiFetch<AcceptedOperation>(
+                `/repositories/${repositoryId}/branches/${name}${query ? `?${query}` : ''}`,
+                {method: 'DELETE'},
+            )
+        },
         onSuccess: () =>
             queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
     })
@@ -335,4 +391,3 @@ export function useCommit() {
             invalidateRepository(queryClient, repositoryId),
     })
 }
-

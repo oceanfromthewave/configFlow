@@ -3,12 +3,15 @@ import {
     useMemo,
     useRef,
     useState,
+    type FormEvent,
     type MouseEvent as ReactMouseEvent,
     type ReactNode,
 } from 'react'
 
 import {
     useCheckout,
+    useCreateBranch,
+    useDeleteBranch,
     useMerge,
     useRefs,
 } from '@/entities/repository/api/repositories'
@@ -19,12 +22,23 @@ import {cn} from '@/shared/lib/cn'
 import {useUiStore} from '@/shared/lib/uiStore'
 import {Spinner} from '@/shared/ui'
 
-function Section({title, children}: { title: string; children: ReactNode }) {
+function Section({
+                     title,
+                     action,
+                     children,
+                 }: {
+    title: string
+    action?: ReactNode
+    children: ReactNode
+}) {
     return (
         <section className="px-3 py-2">
-            <h2 className="mb-1 select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
-                {title}
-            </h2>
+            <div className="mb-1 flex items-center justify-between">
+                <h2 className="select-none text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    {title}
+                </h2>
+                {action}
+            </div>
             {children}
         </section>
     )
@@ -43,6 +57,70 @@ function SectionEmpty({children}: { children: ReactNode }) {
         <p className="select-none px-2 py-0.5 text-xs italic text-muted/80">
             {children}
         </p>
+    )
+}
+
+/** Inline "create branch" row shown below the BRANCHES header. */
+function NewBranchForm({
+                           onSubmit,
+                           onCancel,
+                           pending,
+                       }: {
+    onSubmit: (name: string, checkout: boolean) => void
+    onCancel: () => void
+    pending: boolean
+}) {
+    const t = useT()
+    const [name, setName] = useState('')
+    const [checkout, setCheckout] = useState(false)
+
+    function submit(event: FormEvent) {
+        event.preventDefault()
+        const trimmed = name.trim()
+        if (trimmed === '') return
+        onSubmit(trimmed, checkout)
+    }
+
+    return (
+        <form onSubmit={submit} className="mb-1 flex flex-col gap-1 px-2">
+            <input
+                autoFocus
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Escape') onCancel()
+                }}
+                placeholder={t('branch.namePlaceholder')}
+                disabled={pending}
+                className="h-6 rounded border border-border bg-base px-1.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            />
+            <label className="flex select-none items-center gap-1.5 text-[11px] text-muted">
+                <input
+                    type="checkbox"
+                    checked={checkout}
+                    onChange={(event) => setCheckout(event.target.checked)}
+                    disabled={pending}
+                />
+                {t('branch.checkoutAfterCreate')}
+            </label>
+            <div className="flex gap-1">
+                <button
+                    type="submit"
+                    disabled={pending || name.trim() === ''}
+                    className="h-6 flex-1 rounded bg-accent px-2 text-[12px] text-white outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {pending ? t('branch.creating') : t('branch.createSubmit')}
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    disabled={pending}
+                    className="h-6 rounded px-2 text-[12px] text-muted outline-none hover:bg-elevated focus-visible:ring-2 focus-visible:ring-accent/60"
+                >
+                    ✕
+                </button>
+            </div>
+        </form>
     )
 }
 
@@ -82,8 +160,8 @@ function RefItem({
         </>
     )
 
-    // A row only exposes a context menu when the caller wired one up (mergeable,
-    // not the current branch). Surface that to assistive tech via aria-haspopup.
+    // A row only exposes a context menu when the caller wired one up (mergeable
+    // and/or deletable). Surface that to assistive tech via aria-haspopup.
     const menuProps = onContextMenu
         ? {'aria-haspopup': 'menu' as const, 'aria-expanded': !!menuOpen}
         : {}
@@ -132,14 +210,19 @@ export function Sidebar() {
     const refs = useRefs(repositoryId)
     const checkout = useCheckout()
     const merge = useMerge()
+    const createBranch = useCreateBranch()
+    const deleteBranch = useDeleteBranch()
 
-    // The branch a right-click opened the merge menu on, plus where to anchor it.
-    const [menu, setMenu] = useState<{ name: string; x: number; y: number } | null>(
-        null,
-    )
+    // The branch a right-click opened the context menu on, where to anchor it,
+    // and whether it's a remote-tracking branch (which offers delete only).
+    const [menu, setMenu] = useState<
+        { name: string; x: number; y: number; remote: boolean } | null
+    >(null)
+
+    const [showNewBranch, setShowNewBranch] = useState(false)
 
     // The element that opened the menu, so focus can return to it on close —
-    // and the menu's own action button, so focus lands there on open.
+    // and the menu's own first action button, so focus lands there on open.
     const triggerRef = useRef<HTMLElement | null>(null)
     const menuItemRef = useRef<HTMLButtonElement | null>(null)
 
@@ -169,10 +252,11 @@ export function Sidebar() {
         triggerRef.current = null
     }
 
-    // A stale menu anchored to a branch that no longer exists would be misleading,
-    // so close it whenever a merge cannot target a current branch any more.
+    // A stale menu offering to merge into a branch that no longer exists would
+    // be misleading, so close it whenever a merge cannot target the current
+    // branch any more. Delete-only (remote) menus are unaffected.
     useEffect(() => {
-        if (!canMerge && menu != null) closeMenu()
+        if (!canMerge && menu != null && !menu.remote) closeMenu()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [canMerge, menu])
 
@@ -194,16 +278,16 @@ export function Sidebar() {
     }, [menu])
 
     // Move focus into the menu as soon as it mounts, so keyboard users land
-    // directly on the action instead of it opening silently off-screen.
+    // directly on the first action instead of it opening silently off-screen.
     useEffect(() => {
         if (menu != null) menuItemRef.current?.focus()
     }, [menu])
 
-    function openMenu(name: string, event: ReactMouseEvent) {
+    function openMenu(name: string, event: ReactMouseEvent, remote: boolean) {
         // Suppress the browser's own menu; ours takes its place.
         event.preventDefault()
         triggerRef.current = event.currentTarget as HTMLElement
-        setMenu({name, x: event.clientX, y: event.clientY})
+        setMenu({name, x: event.clientX, y: event.clientY, remote})
     }
 
     function runMerge() {
@@ -212,11 +296,24 @@ export function Sidebar() {
         closeMenu()
     }
 
+    // Shift-click force-deletes (skips the "not fully merged" guard). A plain
+    // click still asks for confirmation either way — deleting a branch is not
+    // undoable from this UI.
+    function runDelete(force: boolean) {
+        if (menu == null || repositoryId == null) return
+        const {name, remote} = menu
+        if (!window.confirm(t('branch.deleteConfirm', {name}))) return
+        deleteBranch.mutate({repositoryId, name, remote, force})
+        closeMenu()
+    }
+
     function renderRefs(
         names: string[],
         markCurrent: boolean,
         checkoutable = false,
         mergeable = false,
+        deletable = false,
+        remote = false,
     ) {
         if (repositoryId == null) {
             return <SectionEmpty>{t('sidebar.noRepository')}</SectionEmpty>
@@ -241,6 +338,9 @@ export function Sidebar() {
         }
         return names.map((name) => {
             const current = markCurrent && name === head
+            // Merging or deleting a branch you're on doesn't make sense, so the
+            // current one is skipped either way.
+            const hasMenu = (mergeable && canMerge && !current) || (deletable && !current)
             return (
                 <RefItem
                     key={name}
@@ -252,13 +352,8 @@ export function Sidebar() {
                     onCheckout={
                         checkoutable ? () => checkout.mutate({repositoryId, ref: name}) : undefined
                     }
-                    // Merging a branch into itself is a no-op, so the current one is skipped.
-                    onContextMenu={
-                        mergeable && canMerge && !current
-                            ? (event) => openMenu(name, event)
-                            : undefined
-                    }
-                    menuOpen={mergeable && menu?.name === name}
+                    onContextMenu={hasMenu ? (event) => openMenu(name, event, remote) : undefined}
+                    menuOpen={hasMenu && menu?.name === name && menu.remote === remote}
                 />
             )
         })
@@ -273,7 +368,39 @@ export function Sidebar() {
                     <SectionItem>{t('sidebar.search')}</SectionItem>
                 </Section>
 
-                <Section title={t('sidebar.branches')}>
+                <Section
+                    title={t('sidebar.branches')}
+                    action={
+                        repositoryId != null ? (
+                            <button
+                                type="button"
+                                onClick={() => setShowNewBranch((v) => !v)}
+                                aria-expanded={showNewBranch}
+                                aria-label={t('sidebar.newBranch')}
+                                title={t('sidebar.newBranch')}
+                                className="flex h-4 w-4 select-none items-center justify-center rounded text-[13px] leading-none text-muted outline-none hover:bg-elevated hover:text-primary focus-visible:ring-2 focus-visible:ring-accent/60"
+                            >
+                                +
+                            </button>
+                        ) : null
+                    }
+                >
+                    {showNewBranch ? (
+                        <NewBranchForm
+                            pending={createBranch.isPending}
+                            onCancel={() => setShowNewBranch(false)}
+                            onSubmit={(name, checkoutAfterCreate) => {
+                                if (repositoryId == null) return
+                                createBranch.mutate({repositoryId, name, checkout: checkoutAfterCreate})
+                                setShowNewBranch(false)
+                            }}
+                        />
+                    ) : null}
+                    {createBranch.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('branch.createFailed')}: {t(apiErrorKey(createBranch.error))}
+                        </p>
+                    ) : null}
                     {detached ? (
                         <p className="px-2 py-0.5 text-xs text-vcs-modified">
                             {t('sidebar.detachedHead')}: {head?.slice(0, 7)}
@@ -289,10 +416,17 @@ export function Sidebar() {
                             {t('branch.mergeFailed')}: {t(apiErrorKey(merge.error))}
                         </p>
                     ) : null}
-                    {renderRefs(local, true, true, true)}
+                    {deleteBranch.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('branch.deleteFailed')}: {t(apiErrorKey(deleteBranch.error))}
+                        </p>
+                    ) : null}
+                    {renderRefs(local, true, true, true, true, false)}
                 </Section>
 
-                <Section title={t('sidebar.remote')}>{renderRefs(remote, false)}</Section>
+                <Section title={t('sidebar.remote')}>
+                    {renderRefs(remote, false, false, false, true, true)}
+                </Section>
 
                 <Section title={t('sidebar.tags')}>{renderRefs(tags, false)}</Section>
             </nav>
@@ -313,15 +447,28 @@ export function Sidebar() {
                         style={{top: menu.y, left: menu.x}}
                         className="fixed z-50 min-w-max rounded-md border border-border bg-elevated py-1 text-[13px] shadow-lg"
                     >
+                        {!menu.remote ? (
+                            <button
+                                ref={menuItemRef}
+                                type="button"
+                                role="menuitem"
+                                disabled={merge.isPending}
+                                onClick={runMerge}
+                                className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('branch.mergeInto', {source: menu.name})}
+                            </button>
+                        ) : null}
                         <button
-                            ref={menuItemRef}
+                            ref={menu.remote ? menuItemRef : undefined}
                             type="button"
                             role="menuitem"
-                            disabled={merge.isPending}
-                            onClick={runMerge}
-                            className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                            title={t('branch.forceDeleteHint')}
+                            disabled={deleteBranch.isPending}
+                            onClick={(event) => runDelete(event.shiftKey)}
+                            className="block w-full px-3 py-1 text-left text-vcs-deleted outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                            {t('branch.mergeInto', {source: menu.name})}
+                            {t('branch.delete')}
                         </button>
                     </div>
                 </>
