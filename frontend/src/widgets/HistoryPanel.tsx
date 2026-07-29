@@ -48,7 +48,7 @@ function laneColor(index: number) {
  * through, converging lines from children above, and the node's own lines down
  * to its parents. A constant width keeps every row's nodes vertically aligned.
  */
-function GraphColumn({row, laneCount}: {row?: RowGraph; laneCount: number}) {
+function GraphColumn({row, laneCount}: { row?: RowGraph; laneCount: number }) {
     const width = Math.max(laneCount, 1) * LANE_WIDTH
     if (!row) {
         return <svg width={width} height={ROW_HEIGHT} className="shrink-0" aria-hidden="true"/>
@@ -98,7 +98,7 @@ function subjectOf(message: string) {
     return firstLine.trim() || message.trim()
 }
 
-function RefLabels({labels}: {labels: RefLabel[]}) {
+function RefLabels({labels}: { labels: RefLabel[] }) {
     if (labels.length === 0) return null
     return (
         <span className="flex shrink-0 items-center gap-1">
@@ -128,12 +128,20 @@ function CommitRow({
 }) {
     return (
         <li
-            className={`flex cursor-pointer items-center gap-2 rounded px-2 ${
+            role="option"
+            tabIndex={0}
+            aria-selected={selected}
+            className={`flex cursor-pointer items-center gap-2 rounded px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
                 selected ? 'bg-elevated ring-1 ring-accent/50' : 'hover:bg-elevated'
             }`}
             style={{height: ROW_HEIGHT}}
-            aria-current={selected}
             onClick={onSelect}
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onSelect()
+                }
+            }}
         >
             <GraphColumn row={graph} laneCount={laneCount}/>
             <RefLabels labels={revision.labels}/>
@@ -257,7 +265,7 @@ export function HistoryPanel() {
                         />
                     ) : (
                         <>
-                            <ul className="flex flex-col">
+                            <ul className="flex flex-col" role="listbox" aria-label={t('history.listLabel')}>
                                 {revisions.map((revision, index) => (
                                     <CommitRow
                                         key={revision.id}

@@ -126,6 +126,7 @@
   "history.clear": "초기화",
   "history.loadMore": "더 보기",
   "history.loadingMore": "불러오는 중…",
+  "history.listLabel": "커밋 목록",
   "commit.detailParents": "부모",
   "commit.detailChangedFiles": "변경된 파일",
   "commit.detailEmpty": "커밋을 선택하면 상세가 표시됩니다.",
