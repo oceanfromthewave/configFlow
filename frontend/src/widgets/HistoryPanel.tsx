@@ -1,6 +1,7 @@
 import {useMemo, useState, type FormEvent} from 'react'
 
 import {useHistory} from '@/entities/repository/api/repositories'
+import {computeCommitGraph, type RowGraph} from '@/entities/repository/lib/commitGraph'
 import type {
     HistoryFilters,
     RefLabel,
@@ -19,6 +20,75 @@ const LABEL_VARIANT: Record<RefLabelKind, BadgeVariant> = {
     BRANCH: 'added',
     REMOTE_BRANCH: 'modified',
     TAG: 'renamed',
+}
+
+/** Graph geometry; ROW_HEIGHT must match the commit row's fixed height. */
+const LANE_WIDTH = 14
+const ROW_HEIGHT = 28
+const DOT_RADIUS = 3.5
+
+// Cycled by lane so neighbouring branches stay distinct; each holds up in both
+// the light and dark themes.
+const LANE_COLORS = [
+    '#3b82f6', '#22c55e', '#a855f7', '#f59e0b',
+    '#ec4899', '#14b8a6', '#ef4444', '#8b5cf6',
+]
+
+function laneX(lane: number) {
+    return lane * LANE_WIDTH + LANE_WIDTH / 2
+}
+
+function laneColor(index: number) {
+    return LANE_COLORS[index % LANE_COLORS.length]
+}
+
+/**
+ * The graph gutter for one commit row: straight verticals for lanes passing
+ * through, converging lines from children above, and the node's own lines down
+ * to its parents. A constant width keeps every row's nodes vertically aligned.
+ */
+function GraphColumn({row, laneCount}: {row?: RowGraph; laneCount: number}) {
+    const width = Math.max(laneCount, 1) * LANE_WIDTH
+    if (!row) {
+        return <svg width={width} height={ROW_HEIGHT} className="shrink-0" aria-hidden="true"/>
+    }
+    const centerX = laneX(row.nodeLane)
+    const midY = ROW_HEIGHT / 2
+    return (
+        <svg
+            width={width}
+            height={ROW_HEIGHT}
+            viewBox={`0 0 ${width} ${ROW_HEIGHT}`}
+            className="shrink-0"
+            aria-hidden="true"
+        >
+            {row.passThrough.map((edge) => (
+                <line
+                    key={`p${edge.fromLane}`}
+                    x1={laneX(edge.fromLane)} y1={0}
+                    x2={laneX(edge.fromLane)} y2={ROW_HEIGHT}
+                    stroke={laneColor(edge.color)} strokeWidth={1.5}
+                />
+            ))}
+            {row.incoming.map((edge) => (
+                <line
+                    key={`i${edge.fromLane}`}
+                    x1={laneX(edge.fromLane)} y1={0}
+                    x2={centerX} y2={midY}
+                    stroke={laneColor(edge.color)} strokeWidth={1.5}
+                />
+            ))}
+            {row.outgoing.map((edge) => (
+                <line
+                    key={`o${edge.toLane}`}
+                    x1={centerX} y1={midY}
+                    x2={laneX(edge.toLane)} y2={ROW_HEIGHT}
+                    stroke={laneColor(edge.color)} strokeWidth={1.5}
+                />
+            ))}
+            <circle cx={centerX} cy={midY} r={DOT_RADIUS} fill={laneColor(row.color)}/>
+        </svg>
+    )
 }
 
 /** Git stores the full message; the list shows only its subject line. */
@@ -43,12 +113,20 @@ function RefLabels({labels}: {labels: RefLabel[]}) {
 function CommitRow({
                        revision,
                        formatDate,
+                       graph,
+                       laneCount,
                    }: {
     revision: Revision
     formatDate: (iso: string) => string
+    graph?: RowGraph
+    laneCount: number
 }) {
     return (
-        <li className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-elevated">
+        <li
+            className="flex items-center gap-2 rounded px-2 hover:bg-elevated"
+            style={{height: ROW_HEIGHT}}
+        >
+            <GraphColumn row={graph} laneCount={laneCount}/>
             <RefLabels labels={revision.labels}/>
             <span
                 className="min-w-0 flex-1 truncate text-xs text-primary"
@@ -89,6 +167,14 @@ export function HistoryPanel() {
         return (iso: string) => format.format(new Date(iso))
     }, [locale])
 
+    // Flatten the loaded pages and lay out the graph together, keyed on the query
+    // data: paging in more commits recomputes, but unrelated renders (typing into
+    // a filter box) reuse the previous layout.
+    const {revisions, graph} = useMemo(() => {
+        const items = history.data?.pages.flatMap((page) => page.items) ?? []
+        return {revisions: items, graph: computeCommitGraph(items)}
+    }, [history.data])
+
     if (repositoryId == null) {
         return (
             <EmptyState
@@ -109,7 +195,6 @@ export function HistoryPanel() {
     }
 
     const hasDraft = Boolean(draft.author?.trim() || draft.message?.trim())
-    const revisions = history.data?.pages.flatMap((page) => page.items) ?? []
 
     return (
         <div className="flex h-full flex-col">
@@ -159,11 +244,13 @@ export function HistoryPanel() {
                 ) : (
                     <>
                         <ul className="flex flex-col">
-                            {revisions.map((revision) => (
+                            {revisions.map((revision, index) => (
                                 <CommitRow
                                     key={revision.id}
                                     revision={revision}
                                     formatDate={formatDate}
+                                    graph={graph.rows[index]}
+                                    laneCount={graph.laneCount}
                                 />
                             ))}
                         </ul>
