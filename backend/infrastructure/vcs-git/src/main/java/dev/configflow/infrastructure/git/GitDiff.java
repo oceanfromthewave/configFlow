@@ -267,13 +267,15 @@ final class GitDiff
 			{
 				return new FileDiff(path, null, ChangeType.MODIFIED, false, List.of());
 			}
+			ChangeType type = typeOf(entry);
+			Path oldPath = type == ChangeType.DELETED ? null : oldPathOf(entry);
 			if(isBinary(formatter, entry))
 			{
-				return new FileDiff(path, oldPathOf(entry), typeOf(entry), true, List.of());
+				return new FileDiff(path, oldPath, type, true, List.of());
 			}
 			formatter.format(entry);
 			formatter.flush();
-			return new FileDiff(path, oldPathOf(entry), typeOf(entry), false, parseHunks(out.toString(StandardCharsets.UTF_8)));
+			return new FileDiff(path, oldPath, type, false, parseHunks(out.toString(StandardCharsets.UTF_8)));
 		}
 	}
 

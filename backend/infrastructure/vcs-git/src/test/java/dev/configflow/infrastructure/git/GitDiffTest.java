@@ -408,6 +408,19 @@ class GitDiffTest {
     }
 
     @Test
+    void diffInCommit_marksADeletedFileWithoutEchoingItsPath() throws Exception {
+        commitFile("keep.txt", "k\n");
+        commitFile("gone.txt", "bye\n");
+        RevisionId removed = removeAndCommit("gone.txt");
+
+        FileDiff diff = diffs.diffInCommit(handle, removed, Path.of("gone.txt"));
+
+        assertEquals(ChangeType.DELETED, diff.type());
+        assertNull(diff.oldPath());
+        assertTrue(linesOf(diff).contains("-bye"));
+    }
+
+    @Test
     void diffInCommit_unknownRevisionIsNotFound() throws Exception {
         commitFile("app.txt", "one\n");
 
