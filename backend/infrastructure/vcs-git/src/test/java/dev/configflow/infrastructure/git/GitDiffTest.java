@@ -311,7 +311,7 @@ class GitDiffTest {
     }
 
     @Test
-    void changesIn_marksADeletedFileByItsOldPath() throws Exception {
+    void changesIn_marksADeletedFile() throws Exception {
         commitFile("keep.txt", "k\n");
         commitFile("gone.txt", "bye\n");
         RevisionId removed = removeAndCommit("gone.txt");
@@ -321,6 +321,10 @@ class GitDiffTest {
         assertEquals(1, changes.size());
         FileChange gone = byPath(changes, "gone.txt");
         assertEquals(ChangeType.DELETED, gone.type());
+        assertEquals(Path.of("gone.txt"), gone.path());
+        // oldPath is only meaningful for renames/copies; a delete must not echo its
+        // own path there or the UI shows a "gone.txt <- gone.txt" arrow.
+        assertNull(gone.oldPath());
     }
 
     @Test

@@ -234,7 +234,8 @@ final class GitDiff
 	{
 		ChangeType type = typeOf(entry);
 		Path path = type == ChangeType.DELETED ? Path.of(entry.getOldPath()) : Path.of(entry.getNewPath());
-		return new FileChange(path, type, oldPathOf(entry), false, null);
+		Path oldPath = type == ChangeType.DELETED ? null : oldPathOf(entry);
+		return new FileChange(path, type, oldPath, false, null);
 	}
 
 	/**
