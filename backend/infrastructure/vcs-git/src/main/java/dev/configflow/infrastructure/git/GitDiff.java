@@ -165,7 +165,7 @@ final class GitDiff
 				newSide = treeOf(repository, commitId);
 				oldSide = commit.getParentCount() == 0 ? new EmptyTreeIterator() : treeOf(repository, commit.getParent(0).getId());
 			}
-			return diff(repository, oldSide, newSide, path);
+			return diffCommitFile(repository, oldSide, newSide, path);
 		}
 		catch(MissingObjectException | IncorrectObjectTypeException e)
 		{
@@ -250,6 +250,30 @@ final class GitDiff
 			formatter.flush();
 			List<DiffHunk> hunks = parseHunks(out.toString(StandardCharsets.UTF_8));
 			return new FileDiff(path, oldPathOf(entry), typeOf(entry), false, hunks);
+		}
+	}
+
+	private static FileDiff diffCommitFile(Repository repository, AbstractTreeIterator oldSide, AbstractTreeIterator newSide, Path path) throws IOException
+	{
+		String gitPath = GitPaths.toGitPath(path);
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		try(DiffFormatter formatter = new DiffFormatter(out))
+		{
+			formatter.setRepository(repository);
+			formatter.setDetectRenames(true);
+			DiffEntry entry = formatter.scan(oldSide, newSide).stream().filter(e -> gitPath.equals(e.getNewPath()) || gitPath.equals(e.getOldPath()))
+					.findFirst().orElse(null);
+			if(entry == null)
+			{
+				return new FileDiff(path, null, ChangeType.MODIFIED, false, List.of());
+			}
+			if(isBinary(formatter, entry))
+			{
+				return new FileDiff(path, oldPathOf(entry), typeOf(entry), true, List.of());
+			}
+			formatter.format(entry);
+			formatter.flush();
+			return new FileDiff(path, oldPathOf(entry), typeOf(entry), false, parseHunks(out.toString(StandardCharsets.UTF_8)));
 		}
 	}
 

@@ -392,6 +392,22 @@ class GitDiffTest {
     }
 
     @Test
+    void diffInCommit_showsARenamedFileAsARenameWithItsEdits() throws Exception {
+        // changesIn reports this as RENAMED -> new.txt, so the diff for that path must
+        // agree: rename detection needs both sides, which a path filter would hide.
+        commitFile("old.txt", "alpha\nbeta\ngamma\ndelta\nepsilon\n");
+        RevisionId renamed =
+                renameCommit("old.txt", "new.txt", "alpha\nbeta\nGAMMA\ndelta\nepsilon\n");
+
+        FileDiff diff = diffs.diffInCommit(handle, renamed, Path.of("new.txt"));
+
+        assertEquals(ChangeType.RENAMED, diff.type());
+        assertEquals(Path.of("old.txt"), diff.oldPath());
+        assertTrue(linesOf(diff).contains("-gamma"), () -> "expected the old line in " + linesOf(diff));
+        assertTrue(linesOf(diff).contains("+GAMMA"), () -> "expected the new line in " + linesOf(diff));
+    }
+
+    @Test
     void diffInCommit_unknownRevisionIsNotFound() throws Exception {
         commitFile("app.txt", "one\n");
 
