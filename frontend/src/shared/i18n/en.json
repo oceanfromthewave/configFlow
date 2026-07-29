@@ -61,6 +61,8 @@
   "branch.checkout": "Check out",
   "branch.checkoutFailed": "Could not check out",
   "branch.switching": "Switching…",
+  "branch.mergeInto": "Merge {source} into current branch",
+  "branch.mergeFailed": "Could not merge",
   "bottomPanel.logEmpty": "No log entries.",
   "statusBar.noBranch": "No branch",
   "statusBar.backendConnected": "Backend connected",

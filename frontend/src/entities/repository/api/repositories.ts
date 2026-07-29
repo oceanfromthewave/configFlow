@@ -21,6 +21,13 @@ interface CheckoutPayload {
     ref: string
 }
 
+interface MergePayload {
+    repositoryId: string
+    source: string
+    fastForwardOnly?: boolean
+    squash?: boolean
+}
+
 /**
  * Runs one of the remote commands.
  *
@@ -114,6 +121,26 @@ export function useCheckout() {
             apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/checkout`, {
                 method: 'POST',
                 body: {ref},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/**
+ * Merges another ref into the current branch.
+ *
+ * Like checkout, this answers as soon as the work is queued; the refreshed refs
+ * and file list arrive later over SSE. A content conflict comes back as a failed
+ * operation on the stream, not as an error thrown here.
+ */
+export function useMerge() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, source, fastForwardOnly, squash}: MergePayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/merge`, {
+                method: 'POST',
+                body: {source, fastForwardOnly, squash},
             }),
         onSuccess: () =>
             queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
