@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.configflow.domain.vcs.model.ChangeType;
 import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.DiffHunk;
+import dev.configflow.domain.vcs.model.FileChange;
 import dev.configflow.domain.vcs.model.FileDiff;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.RevisionId;
@@ -280,7 +281,103 @@ class GitDiffTest {
                 () -> diffs.contentAt(handle, new RevisionId("nope"), Path.of("app.txt")));
     }
 
+    // --- commit changes --------------------------------------------------
+
+    @Test
+    void changesIn_listsWhatACommitChangedAgainstItsFirstParent() throws Exception {
+        commitFile("a.txt", "a\n");
+        writeFile("a.txt", "a changed\n");
+        writeFile("c.txt", "c\n");
+        workingTree.stage(handle, List.of(Path.of("a.txt"), Path.of("c.txt")));
+        RevisionId rev = commits.commit(handle, CommitRequest.of("edit a, add c"));
+
+        List<FileChange> changes = diffs.changesIn(handle, rev);
+
+        assertEquals(2, changes.size(), () -> "unexpected changes: " + changes);
+        assertEquals(ChangeType.MODIFIED, byPath(changes, "a.txt").type());
+        assertEquals(ChangeType.ADDED, byPath(changes, "c.txt").type());
+    }
+
+    @Test
+    void changesIn_onARootCommitListsEverythingAsAdded() throws Exception {
+        RevisionId root = commitFile("only.txt", "x\n");
+
+        List<FileChange> changes = diffs.changesIn(handle, root);
+
+        assertEquals(1, changes.size());
+        assertEquals(ChangeType.ADDED, changes.get(0).type());
+        assertEquals(Path.of("only.txt"), changes.get(0).path());
+        assertNull(changes.get(0).oldPath());
+    }
+
+    @Test
+    void changesIn_marksADeletedFileByItsOldPath() throws Exception {
+        commitFile("keep.txt", "k\n");
+        commitFile("gone.txt", "bye\n");
+        RevisionId removed = removeAndCommit("gone.txt");
+
+        List<FileChange> changes = diffs.changesIn(handle, removed);
+
+        assertEquals(1, changes.size());
+        FileChange gone = byPath(changes, "gone.txt");
+        assertEquals(ChangeType.DELETED, gone.type());
+    }
+
+    @Test
+    void changesIn_detectsARenameAsOneChange() throws Exception {
+        commitFile("old.txt", "same content\n");
+        RevisionId renamed = renameCommit("old.txt", "new.txt", "same content\n");
+
+        List<FileChange> changes = diffs.changesIn(handle, renamed);
+
+        assertEquals(1, changes.size(), () -> "a rename must not split into add+delete: " + changes);
+        FileChange move = changes.get(0);
+        assertEquals(ChangeType.RENAMED, move.type());
+        assertEquals(Path.of("new.txt"), move.path());
+        assertEquals(Path.of("old.txt"), move.oldPath());
+    }
+
+    @Test
+    void changesIn_unknownRevisionIsNotFound() throws Exception {
+        commitFile("app.txt", "one\n");
+
+        assertThrows(NoSuchElementException.class,
+                () -> diffs.changesIn(handle, new RevisionId("0".repeat(40))));
+    }
+
+    @Test
+    void changesIn_malformedRevisionIsRejectedAsBadInput() throws Exception {
+        commitFile("app.txt", "one\n");
+
+        // Same reasoning as diffRevisions: RevisionSyntaxException must land as a 400.
+        assertThrows(IllegalArgumentException.class,
+                () -> diffs.changesIn(handle, new RevisionId("a b")));
+    }
+
     // --- fixture helpers -------------------------------------------------
+
+    private static FileChange byPath(List<FileChange> changes, String path) {
+        return changes.stream()
+                .filter(change -> change.path().equals(Path.of(path)))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no change for " + path + " in " + changes));
+    }
+
+    private RevisionId removeAndCommit(String name) throws Exception {
+        try (Git git = Git.open(repoDir.toFile())) {
+            git.rm().addFilepattern(name).call();
+        }
+        return commits.commit(handle, CommitRequest.of("remove " + name));
+    }
+
+    private RevisionId renameCommit(String from, String to, String content) throws Exception {
+        try (Git git = Git.open(repoDir.toFile())) {
+            git.rm().addFilepattern(from).call();
+        }
+        writeFile(to, content);
+        workingTree.stage(handle, List.of(Path.of(to)));
+        return commits.commit(handle, CommitRequest.of("rename " + from + " to " + to));
+    }
 
     private static List<String> linesOf(FileDiff diff) {
         return diff.hunks().stream().flatMap(hunk -> hunk.lines().stream()).toList();

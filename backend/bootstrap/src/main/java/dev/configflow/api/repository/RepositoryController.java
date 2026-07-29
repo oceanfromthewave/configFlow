@@ -240,6 +240,12 @@ public class RepositoryController
 		return RevisionResponse.from(repositoryService.show(RepositoryId.of(id), new RevisionId(revision)));
 	}
 
+	@GetMapping("/{id}/commits/{revision}/changes")
+	public List<FileChangeResponse> changes(@PathVariable String id, @PathVariable String revision)
+	{
+		return repositoryService.changesIn(RepositoryId.of(id), new RevisionId(revision)).stream().map(FileChangeResponse::from).toList();
+	}
+
 	/** Blank query parameters mean "no filter", not "match the empty string". */
 	private static String trimmed(String value)
 	{

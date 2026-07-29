@@ -142,6 +142,34 @@ class RepositoryControllerTest {
     }
 
     @Test
+    void changes_returnsTheCommitsFileListAsJson() throws Exception {
+        when(repositoryService.changesIn(any(), any())).thenReturn(List.of(
+                FileChange.of(Path.of("src/edited.txt"), ChangeType.MODIFIED),
+                new FileChange(
+                        Path.of("src/new.txt"), ChangeType.RENAMED, Path.of("src/old.txt"), false, null)));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/abc123/changes"))
+                .andExpect(status().isOk())
+                // Always '/', even though Path renders '\' on Windows.
+                .andExpect(jsonPath("$[0].path").value("src/edited.txt"))
+                .andExpect(jsonPath("$[0].type").value("MODIFIED"))
+                .andExpect(jsonPath("$[0].oldPath").doesNotExist())
+                .andExpect(jsonPath("$[1].type").value("RENAMED"))
+                .andExpect(jsonPath("$[1].path").value("src/new.txt"))
+                .andExpect(jsonPath("$[1].oldPath").value("src/old.txt"));
+    }
+
+    @Test
+    void changes_unknownRevisionIs404() throws Exception {
+        when(repositoryService.changesIn(any(), any()))
+                .thenThrow(new NoSuchElementException("Revision not found"));
+
+        mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/commits/deadbeef/changes"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
     void stage_returns204AndForwardsThePaths() throws Exception {
         String id = UUID.randomUUID().toString();
 

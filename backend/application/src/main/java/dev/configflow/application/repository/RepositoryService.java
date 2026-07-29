@@ -173,6 +173,13 @@ public final class RepositoryService
 		return opened.operations().diffWorking(opened.handle(), safePath, staged);
 	}
 
+	public List<FileChange> changesIn(RepositoryId id, RevisionId revision)
+	{
+		Objects.requireNonNull(revision, "revision");
+		VcsAccess.Opened<DiffOperations> opened = access.open(id, DiffOperations.class);
+		return opened.operations().changesIn(opened.handle(), revision);
+	}
+
 	/**
 	 * All branches and tags, plus one entry naming what HEAD points at.
 	 *
@@ -205,9 +212,8 @@ public final class RepositoryService
 	}
 
 	/**
-	/**
-	 * Rejects anything that could point outside the working copy: the paths come from a client, and both absolute paths and {@code ..} segments would escape
-	 * it.
+	 * /** Rejects anything that could point outside the working copy: the paths come from a client, and both absolute paths and {@code ..} segments would
+	 * escape it.
 	 */
 	private static List<Path> requirePaths(List<Path> paths)
 	{
@@ -240,7 +246,6 @@ public final class RepositoryService
 		}
 		return ref.trim();
 	}
-
 
 	private static String deriveName(Path localPath)
 	{

@@ -1,9 +1,11 @@
 package dev.configflow.domain.vcs.port;
 
+import dev.configflow.domain.vcs.model.FileChange;
 import dev.configflow.domain.vcs.model.FileDiff;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.RevisionId;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Port for producing structured diffs and historical file content.
@@ -15,6 +17,8 @@ public interface DiffOperations {
 
     /** Diff of a file between two revisions. */
     FileDiff diffRevisions(RepositoryHandle repo, RevisionId from, RevisionId to, Path path);
+
+    List<FileChange> changesIn(RepositoryHandle repo, RevisionId revision);
 
     /** Full content of a file as of the given revision. */
     String contentAt(RepositoryHandle repo, RevisionId revision, Path path);

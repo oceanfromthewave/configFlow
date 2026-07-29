@@ -7,6 +7,7 @@ import {
 
 import type {AcceptedOperation} from '@/entities/operation/model/types'
 import type {
+    FileChange,
     FileDiff,
     HistoryFilters,
     HistoryPage,
@@ -308,6 +309,32 @@ export function useFileDiff(
                 })}`,
             ),
         enabled: repositoryId != null && path != null,
+    })
+}
+
+/**
+ * The files a commit changed, against its first parent.
+ *
+ * Keyed under the repository and revision, so selecting another commit fetches
+ * fresh and switching repositories does not show a stale list. Disabled until
+ * both a repository and a revision are in hand.
+ */
+export function useCommitChanges(
+    repositoryId: string | null,
+    revisionId: string | null,
+) {
+    return useQuery({
+        queryKey: [
+            ...queryKeys.repository(repositoryId ?? 'none'),
+            'commit',
+            revisionId ?? 'none',
+            'changes',
+        ],
+        queryFn: () =>
+            apiFetch<FileChange[]>(
+                `/repositories/${repositoryId}/commits/${revisionId}/changes`,
+            ),
+        enabled: repositoryId != null && revisionId != null,
     })
 }
 
