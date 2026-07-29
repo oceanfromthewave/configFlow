@@ -74,6 +74,7 @@
   "branch.deleteFailed": "Could not delete the branch",
   "branch.deleteConfirm": "Delete branch \"{name}\"?",
   "branch.forceDeleteHint": "Shift+click: force delete",
+  "branch.cancelNewBranch": "Cancel creating a branch",
   "bottomPanel.logEmpty": "No log entries.",
   "statusBar.noBranch": "No branch",
   "statusBar.backendConnected": "Backend connected",
