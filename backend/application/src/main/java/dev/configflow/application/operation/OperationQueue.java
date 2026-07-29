@@ -286,23 +286,25 @@ public final class OperationQueue
 
 	private void execute(LiveOperation operation, OperationTask task)
 	{
-		if(operation.isSettled())
+		synchronized(operation)
 		{
-			// Shutdown already recorded an outcome for this one while it waited. Running
-			// it now would touch the repository after the app said it was done.
-			return;
-		}
-		if(operation.cancelRequested.get())
-		{
-			// Cancelled while still waiting its turn: it must never touch the repository.
-			terminate(operation, OperationState.CANCELLED, null);
-			return;
+			if(operation.isSettled())
+			{
+				return;
+			}
+			if(operation.cancelRequested.get())
+			{
+				// Cancelled while still waiting its turn: it must never touch the repository.
+				terminate(operation, OperationState.CANCELLED, null);
+				return;
+			}
+
+			// Claim it before releasing the lock: once RUNNING is set, a racing shutdown
+			// can only cancel cooperatively, never start an already-settled operation.
+			operation.state = OperationState.RUNNING;
+			operation.startedAt = clock.instant();
 		}
 
-		operation.state = OperationState.RUNNING;
-		operation.startedAt = clock.instant();
-		// Announce the start so a client sees it leave the queue even if the task is
-		// silent until it finishes.
 		operation.progress = OperationProgress.indeterminate(operation.type.name());
 		events.progress(operation.id, operation.progress);
 
@@ -444,7 +446,10 @@ public final class OperationQueue
 		/** True for exactly one caller: the one allowed to record the terminal state. */
 		boolean settle()
 		{
-			return settled.compareAndSet(false, true);
+			synchronized(this)
+			{
+				return settled.compareAndSet(false, true);
+			}
 		}
 
 		boolean isSettled()

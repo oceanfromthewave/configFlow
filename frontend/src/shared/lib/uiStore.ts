@@ -58,11 +58,12 @@ interface UiState {
   setBottomPanelTab: (tab: BottomPanelTab) => void
 
   /**
-   * Credential prompt for a remote that rejected a queued operation; null when
-   * nothing is waiting on the user. Global, because the operation can fail on
-   * any screen.
+   * Credential prompts for remotes that rejected queued operations, oldest
+   * first; the modal shows the head. A queue rather than a single slot so two
+   * near-simultaneous auth failures don't silently drop the earlier one.
+   * Global, because an operation can fail on any screen.
    */
-  authPrompt: AuthPrompt | null
+  authPrompts: AuthPrompt[]
   promptForAuth: (prompt: AuthPrompt) => void
   dismissAuthPrompt: () => void
 }
@@ -92,7 +93,15 @@ export const useUiStore = create<UiState>()((set) => ({
   bottomPanelTab: 'console',
   setBottomPanelTab: (bottomPanelTab) => set({ bottomPanelTab }),
 
-  authPrompt: null,
-  promptForAuth: (authPrompt) => set({ authPrompt }),
-  dismissAuthPrompt: () => set({ authPrompt: null }),
+  authPrompts: [],
+  // Ignore a repeat of one already waiting (a redelivered SSE event); otherwise
+  // append so a second failing remote queues behind the first.
+  promptForAuth: (prompt) =>
+    set((state) =>
+      state.authPrompts.some((p) => p.operationId === prompt.operationId)
+        ? state
+        : { authPrompts: [...state.authPrompts, prompt] },
+    ),
+  dismissAuthPrompt: () =>
+    set((state) => ({ authPrompts: state.authPrompts.slice(1) })),
 }))
