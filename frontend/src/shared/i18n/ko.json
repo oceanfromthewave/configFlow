@@ -74,6 +74,7 @@
   "branch.deleteFailed": "브랜치를 삭제하지 못했습니다",
   "branch.deleteConfirm": "\"{name}\" 브랜치를 삭제할까요?",
   "branch.forceDeleteHint": "Shift+클릭: 강제 삭제",
+  "branch.cancelNewBranch": "브랜치 생성 취소",
   "bottomPanel.logEmpty": "로그가 없습니다.",
   "statusBar.noBranch": "브랜치 없음",
   "statusBar.backendConnected": "백엔드 연결됨",

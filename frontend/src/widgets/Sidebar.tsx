@@ -91,6 +91,7 @@ function NewBranchForm({
                     if (event.key === 'Escape') onCancel()
                 }}
                 placeholder={t('branch.namePlaceholder')}
+                aria-label={t('branch.namePlaceholder')}
                 disabled={pending}
                 className="h-6 rounded border border-border bg-base px-1.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
             />
@@ -115,6 +116,8 @@ function NewBranchForm({
                     type="button"
                     onClick={onCancel}
                     disabled={pending}
+                    aria-label={t('branch.cancelNewBranch')}
+                    title={t('branch.cancelNewBranch')}
                     className="h-6 rounded px-2 text-[12px] text-muted outline-none hover:bg-elevated focus-visible:ring-2 focus-visible:ring-accent/60"
                 >
                     ✕
@@ -252,13 +255,14 @@ export function Sidebar() {
         triggerRef.current = null
     }
 
-    // A stale menu offering to merge into a branch that no longer exists would
-    // be misleading, so close it whenever a merge cannot target the current
-    // branch any more. Delete-only (remote) menus are unaffected.
+    // Closing the repository leaves the menu pointing at a branch that is no
+    // longer listed, so dismiss it. A detached HEAD is different: local branches
+    // are still listed and still deletable, so its menu stays open — only the
+    // merge action (which needs a branch to merge *into*) is hidden below.
     useEffect(() => {
-        if (!canMerge && menu != null && !menu.remote) closeMenu()
+        if (repositoryId == null && menu != null) closeMenu()
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [canMerge, menu])
+    }, [repositoryId, menu])
 
     // Escape and scrolling both dismiss the open menu — the position is fixed, so
     // scrolling the list would otherwise leave it stranded.
@@ -391,8 +395,14 @@ export function Sidebar() {
                             onCancel={() => setShowNewBranch(false)}
                             onSubmit={(name, checkoutAfterCreate) => {
                                 if (repositoryId == null) return
-                                createBranch.mutate({repositoryId, name, checkout: checkoutAfterCreate})
-                                setShowNewBranch(false)
+                                // Close only once the request is accepted: while it is
+                                // pending the form stays mounted to show its disabled
+                                // "Creating…" state, and on failure it stays open so the
+                                // error is visible and the name can be retried.
+                                createBranch.mutate(
+                                    {repositoryId, name, checkout: checkoutAfterCreate},
+                                    {onSuccess: () => setShowNewBranch(false)},
+                                )
                             }}
                         />
                     ) : null}
@@ -447,7 +457,7 @@ export function Sidebar() {
                         style={{top: menu.y, left: menu.x}}
                         className="fixed z-50 min-w-max rounded-md border border-border bg-elevated py-1 text-[13px] shadow-lg"
                     >
-                        {!menu.remote ? (
+                        {!menu.remote && canMerge ? (
                             <button
                                 ref={menuItemRef}
                                 type="button"
@@ -460,7 +470,7 @@ export function Sidebar() {
                             </button>
                         ) : null}
                         <button
-                            ref={menu.remote ? menuItemRef : undefined}
+                            ref={menu.remote || !canMerge ? menuItemRef : undefined}
                             type="button"
                             role="menuitem"
                             title={t('branch.forceDeleteHint')}

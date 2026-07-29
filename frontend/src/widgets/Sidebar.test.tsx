@@ -268,6 +268,31 @@ describe('Sidebar', () => {
     expect(await screen.findByText(/병합하지 못했습니다/)).toBeInTheDocument()
   })
 
+  it('still offers to delete a local branch when the head is detached', async () => {
+    // Regression: a detached head disables *merging* (there is no branch to
+    // merge into) but must not disable *deleting*. The menu must stay open
+    // instead of closing itself the moment it appears.
+    stubRefs([
+      { kind: 'HEAD', name: '0123456789abcdef0123456789abcdef01234567' },
+      { kind: 'BRANCH', name: 'main' },
+      { kind: 'BRANCH', name: 'feature/x' },
+    ])
+
+    renderSidebar()
+    fireEvent.contextMenu(
+      await screen.findByRole('button', { name: '체크아웃: feature/x' }),
+    )
+
+    // Delete is offered and the menu stays open…
+    expect(
+      await screen.findByRole('menuitem', { name: '삭제' }),
+    ).toBeInTheDocument()
+    // …while merge is hidden: there is no current branch to merge into.
+    expect(
+      screen.queryByRole('menuitem', { name: /병합/ }),
+    ).not.toBeInTheDocument()
+  })
+
   it('reports a failure without hiding the workspace links', async () => {
     stubRefs({ code: 'INTERNAL_ERROR' }, 500)
 
