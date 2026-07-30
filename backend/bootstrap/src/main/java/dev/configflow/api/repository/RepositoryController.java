@@ -185,7 +185,18 @@ public class RepositoryController
 		return RepositoryResponse.from(registered);
 	}
 
+	@PostMapping("/init")
+	public RepositoryResponse init(@RequestBody(required = false) RegisterRequest request)
+	{
+		if(request == null || request.localPath() == null || request.localPath().isBlank())
+		{
+			throw new IllegalArgumentException("A 'localPath' is required");
+		}
+		return RepositoryResponse.from(repositoryService.initialize(Path.of(request.localPath().trim())));
+	}
+
 	@PostMapping("/{id}/open")
+
 	public RepositoryResponse open(@PathVariable String id)
 	{
 		return RepositoryResponse.from(repositoryService.open(RepositoryId.of(id)));

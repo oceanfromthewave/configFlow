@@ -96,6 +96,27 @@ class RepositoryControllerTest {
     }
 
     @Test
+    void init_returnsTheCreatedRepository() throws Exception {
+        when(repositoryService.initialize(any())).thenReturn(sample());
+
+        mvc.perform(post("/api/v1/repositories/init")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"localPath\":\"C:/dev/new\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("demo"))
+                .andExpect(jsonPath("$.vcsType").value("GIT"));
+    }
+
+    @Test
+    void init_missingLocalPathIs400() throws Exception {
+        mvc.perform(post("/api/v1/repositories/init")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void register_unsupportedPathIs400() throws Exception {
         when(repositoryService.register(any()))
                 .thenThrow(new IllegalArgumentException("Not a supported repository"));

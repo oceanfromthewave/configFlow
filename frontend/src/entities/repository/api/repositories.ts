@@ -226,6 +226,20 @@ export function useRegisterRepository() {
     })
 }
 
+/** Creates a new Git repository at the given path and registers it. */
+export function useInitRepository() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: (localPath: string) =>
+            apiFetch<RepositorySummary>('/repositories/init', {
+                method: 'POST',
+                body: {localPath},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.repositories()}),
+    })
+}
+
 /** Marks a repository as opened (updates its last-opened time). */
 export function useOpenRepository() {
     const queryClient = useQueryClient()

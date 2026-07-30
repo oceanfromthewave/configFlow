@@ -13,6 +13,7 @@ import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.Author;
 import dev.configflow.domain.vcs.model.ChangeType;
+import dev.configflow.domain.vcs.model.CloneRequest;
 import dev.configflow.domain.vcs.model.CommitRequest;
 import dev.configflow.domain.vcs.model.FileChange;
 import dev.configflow.domain.vcs.model.FileDiff;
@@ -27,7 +28,9 @@ import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.model.WorkingTreeStatus;
 import dev.configflow.domain.vcs.port.CommitOperations;
 import dev.configflow.domain.vcs.port.DiffOperations;
+import dev.configflow.domain.vcs.port.OperationMonitor;
 import dev.configflow.domain.vcs.port.RefBrowseOperations;
+import dev.configflow.domain.vcs.port.RepositoryOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.WorkingTreeOperations;
 import java.nio.file.Path;
@@ -79,6 +82,24 @@ class RepositoryServiceTest {
         service.register(repoDir);
 
         assertThrows(IllegalArgumentException.class, () -> service.register(repoDir));
+    }
+
+    @Test
+    void initialize_createsAndRegistersAGitRepo() {
+        Repository repo = service.initialize(repoDir);
+
+        Path canonical = repoDir.toAbsolutePath().normalize();
+        assertEquals(canonical, provider.initialised, "init must run against the target path");
+        assertEquals(VcsType.GIT, repo.vcsType());
+        assertEquals(canonical, repo.localPath());
+        assertTrue(store.findById(repo.id()).isPresent());
+    }
+
+    @Test
+    void initialize_rejectsAnAlreadyRegisteredPath() {
+        service.initialize(repoDir);
+
+        assertThrows(IllegalArgumentException.class, () -> service.initialize(repoDir));
     }
 
     @Test
@@ -337,7 +358,7 @@ class RepositoryServiceTest {
     }
 
     private static final class FakeGitProvider implements VcsProvider, WorkingTreeOperations,
-            CommitOperations, DiffOperations, RefBrowseOperations {
+            CommitOperations, DiffOperations, RefBrowseOperations, RepositoryOperations {
 
         static final RevisionId CREATED = new RevisionId("0123456789abcdef");
         static final Revision REVISION = new Revision(
@@ -376,9 +397,22 @@ class RepositoryServiceTest {
             return detects;
         }
 
+        Path initialised;
+
         @Override
         public RepositoryHandle open(Path localPath) {
             return new RepositoryHandle(localPath, VcsType.GIT);
+        }
+
+        @Override
+        public RepositoryHandle init(Path path) {
+            initialised = path;
+            return new RepositoryHandle(path, VcsType.GIT);
+        }
+
+        @Override
+        public RepositoryHandle cloneRepository(CloneRequest request, OperationMonitor monitor) {
+            return new RepositoryHandle(request.localPath(), VcsType.GIT);
         }
 
         @Override
@@ -437,6 +471,16 @@ class RepositoryServiceTest {
 
         @Override
         public String contentAt(RepositoryHandle repo, RevisionId revision, Path path) {
+            throw new UnsupportedOperationException("not needed by these tests");
+        }
+
+        @Override
+        public List<FileChange> changesIn(RepositoryHandle repo, RevisionId revision) {
+            throw new UnsupportedOperationException("not needed by these tests");
+        }
+
+        @Override
+        public FileDiff diffInCommit(RepositoryHandle repo, RevisionId revision, Path path) {
             throw new UnsupportedOperationException("not needed by these tests");
         }
 
