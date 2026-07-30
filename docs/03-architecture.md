@@ -120,7 +120,10 @@ record WorkingTreeStatus(List<FileChange> staged, List<FileChange> unstaged, Lis
 Clone, Fetch, 대규모 Diff 등은 수 분이 걸릴 수 있다.
 
 - 모든 변경성 작업은 `OperationQueue`에 제출되고 **Repository 단위로 순차 실행** (동일 working copy 동시 변경 방지). 서로 다른 Repository는 병렬 실행.
-- 작업은 `Operation { id, type, state(QUEUED|RUNNING|SUCCEEDED|FAILED|CANCELLED), progress, log }`로 모델링.
+- 작업은 `Operation { id, type, state(QUEUED|RUNNING|SUCCEEDED|FAILED|CANCELLED), progress, log }`로 모델링한다.
+- `Operation`에는 `CONFLICTED` 상태를 두지 않는다.
+- Merge/Rebase/Cherry-pick 등에서 충돌이 발생하면 Operation은 `FAILED`로 종료하고, `error.code`에 `MERGE_CONFLICT` 등의 안정적인 오류 코드를 전달한다.
+- 충돌 파일 및 3-way 내용은 Conflict API를 통해 조회한다.
 - 진행률과 상태 변화는 **도메인 이벤트 → SSE**로 Frontend에 스트리밍.
 - 조회성 작업(status, history 페이지)은 큐를 거치지 않고 즉시 실행하되 읽기 락으로 보호.
 
@@ -131,7 +134,7 @@ Provider(진행률 콜백) → Application(OperationEvents) → SSE Endpoint →
                                     └→ Console Log 패널 기록 (실행 명령/결과)
 ```
 
-- 이벤트 종류: `operation.progress`, `operation.completed`, `repository.changed`(watcher), `workingtree.changed`
+- 이벤트 종류 (실제 와이어 이름): `operation.progress`, `operation.completed`, `workingtree.changed`(watcher), `repository.refs-changed`(fetch/브랜치 후), `repository.registered`, `console.line`(콘솔 로그). 상세 페이로드는 07 §3.
 - Frontend는 이벤트 수신 시 해당 화면의 쿼리 캐시(TanStack Query)를 무효화하여 자동 갱신.
 
 ## 6. AI Provider 추상화
