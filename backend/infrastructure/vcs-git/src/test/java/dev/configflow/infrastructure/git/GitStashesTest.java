@@ -13,6 +13,7 @@ import dev.configflow.domain.vcs.model.VcsType;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.NoSuchElementException;
 import org.eclipse.jgit.api.Git;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -108,5 +109,15 @@ class GitStashesTest {
         stashes.drop(handle, 0);
 
         assertEquals(0, stashes.list(handle).size());
+    }
+
+    @Test
+    void applyPopDropOnOutOfRangeIndexThrowNoSuchElement() throws Exception {
+        Files.writeString(repoDir.resolve("file.txt"), "modified content\n");
+        stashes.save(handle, "wip", false);
+
+        assertThrows(NoSuchElementException.class, () -> stashes.apply(handle, 1));
+        assertThrows(NoSuchElementException.class, () -> stashes.pop(handle, 1));
+        assertThrows(NoSuchElementException.class, () -> stashes.drop(handle, 1));
     }
 }

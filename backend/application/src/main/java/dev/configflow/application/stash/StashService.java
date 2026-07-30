@@ -45,6 +45,7 @@ public class StashService
 
 	public Operation apply(RepositoryId id, int index)
 	{
+		requireValidIndex(index);
 		VcsAccess.Opened<StashOperations> opened = access.open(id, StashOperations.class);
 		return queue.submit(id, OperationType.STASH, context -> {
 			context.log("stash apply stash@{" + index + "}", ConsoleLevel.CMD);
@@ -56,6 +57,7 @@ public class StashService
 
 	public Operation pop(RepositoryId id, int index)
 	{
+		requireValidIndex(index);
 		VcsAccess.Opened<StashOperations> opened = access.open(id, StashOperations.class);
 		return queue.submit(id, OperationType.STASH, context -> {
 			context.log("stash pop stash@{" + index + "}", ConsoleLevel.CMD);
@@ -67,11 +69,21 @@ public class StashService
 
 	public Operation drop(RepositoryId id, int index)
 	{
+		requireValidIndex(index);
 		VcsAccess.Opened<StashOperations> opened = access.open(id, StashOperations.class);
 		return queue.submit(id, OperationType.STASH, context -> {
 			context.log("stash drop stash@{" + index + "}", ConsoleLevel.CMD);
 			context.throwIfCancelled();
 			opened.operations().drop(opened.handle(), index);
+			events.workingTreeChanged(id);
 		});
+	}
+
+	private static void requireValidIndex(int index)
+	{
+		if(index < 0)
+		{
+			throw new IllegalArgumentException("stash index must be non-negative: " + index);
+		}
 	}
 }

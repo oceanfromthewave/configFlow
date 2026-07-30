@@ -10,11 +10,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.CheckoutConflictException;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.api.errors.InvalidRefNameException;
 import org.eclipse.jgit.api.errors.JGitInternalException;
+import org.eclipse.jgit.errors.RevisionSyntaxException;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.api.errors.StashApplyFailureException;
 
@@ -42,7 +45,7 @@ final class GitStashes implements StashOperations
 			}
 			return List.copyOf(entries);
 		}
-		catch(GitAPIException e)
+		catch(GitAPIException | JGitInternalException e)
 		{
 			throw new VcsException("Failed to list stashes in " + repo.localPath(), e);
 		}
@@ -66,7 +69,7 @@ final class GitStashes implements StashOperations
 				throw new VcsPreconditionException("No local changes to stash");
 			}
 		}
-		catch(GitAPIException e)
+		catch(GitAPIException | JGitInternalException e)
 		{
 			throw new VcsException("Failed to save stash in " + repo.localPath(), e);
 		}
@@ -77,7 +80,12 @@ final class GitStashes implements StashOperations
 	{
 		try(Git git = access.open(repo))
 		{
+			requireExists(git, repo, index);
 			git.stashApply().setStashRef("stash@{" + index + "}").call();
+		}
+		catch(InvalidRefNameException | RevisionSyntaxException e)
+		{
+			throw new NoSuchElementException("Stash not found: stash@{" + index + "}");
 		}
 		catch(CheckoutConflictException e)
 		{
@@ -98,8 +106,23 @@ final class GitStashes implements StashOperations
 	{
 		try(Git git = access.open(repo))
 		{
+			requireExists(git, repo, index);
 			git.stashApply().setStashRef("stash@{" + index + "}").call();
-			git.stashDrop().setStashRef(index).call();
+			try
+			{
+				git.stashDrop().setStashRef(index).call();
+			}
+			catch(GitAPIException | JGitInternalException e)
+			{
+				throw new VcsException(
+						"Stash applied but failed to drop stash@{" + index + "} in " + repo.localPath()
+								+ "; drop it manually to avoid re-applying",
+						e);
+			}
+		}
+		catch(InvalidRefNameException | RevisionSyntaxException e)
+		{
+			throw new NoSuchElementException("Stash not found: stash@{" + index + "}");
 		}
 		catch(CheckoutConflictException e)
 		{
@@ -120,11 +143,30 @@ final class GitStashes implements StashOperations
 	{
 		try(Git git = access.open(repo))
 		{
+			requireExists(git, repo, index);
 			git.stashDrop().setStashRef(index).call();
+		}
+		catch(InvalidRefNameException | RevisionSyntaxException e)
+		{
+			throw new NoSuchElementException("Stash not found: stash@{" + index + "}");
 		}
 		catch(GitAPIException | JGitInternalException e)
 		{
 			throw new VcsException("Failed to drop stash@{" + index + "} in " + repo.localPath(), e);
+		}
+	}
+
+	/** Bounds-checks {@code index} up front so an out-of-range value fails as "not found" rather than as a translated JGit engine error. */
+	private static void requireExists(Git git, RepositoryHandle repo, int index) throws GitAPIException
+	{
+		int count = 0;
+		for(RevCommit ignored : git.stashList().call())
+		{
+			count++;
+		}
+		if(index >= count)
+		{
+			throw new NoSuchElementException("Stash not found: stash@{" + index + "}");
 		}
 	}
 }
