@@ -120,4 +120,14 @@ class GitStashesTest {
         assertThrows(NoSuchElementException.class, () -> stashes.pop(handle, 1));
         assertThrows(NoSuchElementException.class, () -> stashes.drop(handle, 1));
     }
+
+    @Test
+    void applyPopDropOnNegativeIndexThrowIllegalArgument() throws Exception {
+        Files.writeString(repoDir.resolve("file.txt"), "modified content\n");
+        stashes.save(handle, "wip", false);
+
+        assertThrows(IllegalArgumentException.class, () -> stashes.apply(handle, -1));
+        assertThrows(IllegalArgumentException.class, () -> stashes.pop(handle, -1));
+        assertThrows(IllegalArgumentException.class, () -> stashes.drop(handle, -1));
+    }
 }
