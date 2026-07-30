@@ -7,6 +7,7 @@ import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationEvents;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.RepositoryId;
+import dev.configflow.domain.vcs.exception.StashDropAfterApplyException;
 import dev.configflow.domain.vcs.model.StashEntry;
 import dev.configflow.domain.vcs.port.StashOperations;
 
@@ -62,7 +63,15 @@ public class StashService
 		return queue.submit(id, OperationType.STASH, context -> {
 			context.log("stash pop stash@{" + index + "}", ConsoleLevel.CMD);
 			context.throwIfCancelled();
-			opened.operations().pop(opened.handle(), index);
+			try
+			{
+				opened.operations().pop(opened.handle(), index);
+			}
+			catch(StashDropAfterApplyException e)
+			{
+				events.workingTreeChanged(id);
+				throw e;
+			}
 			events.workingTreeChanged(id);
 		});
 	}

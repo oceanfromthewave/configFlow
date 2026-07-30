@@ -12,11 +12,13 @@ import dev.configflow.domain.operation.OperationEvents;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationProgress;
+import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
+import dev.configflow.domain.vcs.exception.StashDropAfterApplyException;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.StashEntry;
 import dev.configflow.domain.vcs.model.VcsType;
@@ -73,6 +75,18 @@ class StashServiceTest {
     }
 
     @Test
+    void pop_publishesWorkingTreeChangedEvenWhenDropFailsAfterApply() {
+        StashService service = service();
+        RepositoryId id = register();
+        provider.popFailure = new StashDropAfterApplyException("apply ok, drop failed", null);
+
+        Operation operation = service.pop(id, 0);
+
+        assertEquals(OperationState.FAILED, operation.state());
+        assertEquals(List.of(id), events.workingTreeChanged);
+    }
+
+    @Test
     void apply_pop_drop_rejectNegativeIndexWithoutQueueingAnything() {
         StashService service = service();
         RepositoryId id = register();
@@ -89,6 +103,7 @@ class StashServiceTest {
     private static final class FakeStashProvider implements VcsProvider, StashOperations {
 
         private final List<String> calls = new ArrayList<>();
+        private RuntimeException popFailure;
 
         @Override
         public VcsType type() {
@@ -128,6 +143,9 @@ class StashServiceTest {
         @Override
         public void pop(RepositoryHandle repo, int index) {
             calls.add("pop:" + index);
+            if (popFailure != null) {
+                throw popFailure;
+            }
         }
 
         @Override
