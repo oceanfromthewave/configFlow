@@ -119,3 +119,10 @@ export interface FileDiff {
   binary: boolean
   hunks: DiffHunk[]
 }
+
+/** One entry of `git stash list`, as returned by `GET /repositories/{id}/stashes`. */
+export interface StashEntry {
+  index: number
+  message: string
+  createdAt: string
+}

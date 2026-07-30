@@ -47,6 +47,16 @@ function stubRefs(refs: unknown, status = 200, postStatus = 202) {
           ),
         )
       }
+      // The stash list is a separate endpoint from refs; these tests are all
+      // about branches, so it always answers empty.
+      if (String(input).includes('/stashes')) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+      }
       return Promise.resolve(
         new Response(JSON.stringify(status === 200 ? { refs } : refs), {
           status,
@@ -126,7 +136,8 @@ describe('Sidebar', () => {
 
     renderSidebar()
 
-    expect(await screen.findAllByText('항목이 없습니다')).toHaveLength(3)
+    // Local, remote, tags and stashes all render the same generic empty state.
+    expect(await screen.findAllByText('항목이 없습니다')).toHaveLength(4)
   })
 
   it('asks for a repository before fetching anything', () => {
@@ -135,7 +146,8 @@ describe('Sidebar', () => {
 
     renderSidebar()
 
-    expect(screen.getAllByText('저장소를 열면 브랜치가 표시됩니다')).toHaveLength(3)
+    // Local, remote, tags and stashes all reuse the same "open a repository" copy.
+    expect(screen.getAllByText('저장소를 열면 브랜치가 표시됩니다')).toHaveLength(4)
     expect(fetch).not.toHaveBeenCalled()
   })
 

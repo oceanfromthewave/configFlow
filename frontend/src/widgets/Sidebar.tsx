@@ -9,13 +9,18 @@ import {
 } from 'react'
 
 import {
+    useApplyStash,
     useCheckout,
     useCreateBranch,
     useDeleteBranch,
+    useDropStash,
     useMerge,
+    usePopStash,
     useRefs,
+    useSaveStash,
+    useStashes,
 } from '@/entities/repository/api/repositories'
-import type {RefLabel} from '@/entities/repository/model/types'
+import type {RefLabel, StashEntry} from '@/entities/repository/model/types'
 import {useT} from '@/shared/i18n'
 import {apiErrorKey} from '@/shared/lib/apiErrorMessage'
 import {cn} from '@/shared/lib/cn'
@@ -127,6 +132,71 @@ function NewBranchForm({
     )
 }
 
+/** Inline "save stash" row shown below the STASHES header. */
+function NewStashForm({
+                          onSubmit,
+                          onCancel,
+                          pending,
+                      }: {
+    onSubmit: (message: string, includeUntracked: boolean) => void
+    onCancel: () => void
+    pending: boolean
+}) {
+    const t = useT()
+    const [message, setMessage] = useState('')
+    const [includeUntracked, setIncludeUntracked] = useState(false)
+
+    function submit(event: FormEvent) {
+        event.preventDefault()
+        onSubmit(message.trim(), includeUntracked)
+    }
+
+    return (
+        <form onSubmit={submit} className="mb-1 flex flex-col gap-1 px-2">
+            <input
+                autoFocus
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Escape') onCancel()
+                }}
+                placeholder={t('stash.messagePlaceholder')}
+                aria-label={t('stash.messagePlaceholder')}
+                disabled={pending}
+                className="h-6 rounded border border-border bg-base px-1.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            />
+            <label className="flex select-none items-center gap-1.5 text-[11px] text-muted">
+                <input
+                    type="checkbox"
+                    checked={includeUntracked}
+                    onChange={(event) => setIncludeUntracked(event.target.checked)}
+                    disabled={pending}
+                />
+                {t('stash.includeUntracked')}
+            </label>
+            <div className="flex gap-1">
+                <button
+                    type="submit"
+                    disabled={pending}
+                    className="h-6 flex-1 rounded bg-accent px-2 text-[12px] text-white outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {pending ? t('stash.saving') : t('stash.saveSubmit')}
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    disabled={pending}
+                    aria-label={t('stash.cancelNewStash')}
+                    title={t('stash.cancelNewStash')}
+                    className="h-6 rounded px-2 text-[12px] text-muted outline-none hover:bg-elevated focus-visible:ring-2 focus-visible:ring-accent/60"
+                >
+                    ✕
+                </button>
+            </div>
+        </form>
+    )
+}
+
 function RefItem({
                      name,
                      current,
@@ -203,9 +273,44 @@ function RefItem({
     )
 }
 
+/** One row of the STASHES section; clicking it applies the stash. */
+function StashItem({
+                        entry,
+                        onApply,
+                        onContextMenu,
+                        disabled,
+                        menuOpen,
+                    }: {
+    entry: StashEntry
+    onApply: () => void
+    onContextMenu: (event: ReactMouseEvent) => void
+    disabled: boolean
+    menuOpen: boolean
+}) {
+    const t = useT()
+    // A stash may be saved without a message; fall back to its position so the
+    // row is never blank.
+    const label = entry.message.trim() !== '' ? entry.message : `stash@{${entry.index}}`
+    return (
+        <button
+            type="button"
+            title={`${t('stash.apply')}: ${label}`}
+            aria-label={`${t('stash.apply')}: ${label}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            disabled={disabled}
+            onClick={onApply}
+            onContextMenu={onContextMenu}
+            className="flex h-6 w-full select-none items-center gap-1.5 rounded px-2 text-left text-[13px] text-primary/90 outline-none hover:bg-elevated focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+            <span className="min-w-0 truncate">{label}</span>
+        </button>
+    )
+}
+
 /**
- * Left sidebar (docs/06 §1): WORKSPACE / BRANCHES / TAGS.
- * STASHES / SVN LOCKS sections appear later, gated by Capability.
+ * Left sidebar (docs/06 §1): WORKSPACE / BRANCHES / TAGS / STASHES.
+ * SVN LOCKS appears later, gated by Capability.
  */
 export function Sidebar() {
     const t = useT()
@@ -215,6 +320,12 @@ export function Sidebar() {
     const merge = useMerge()
     const createBranch = useCreateBranch()
     const deleteBranch = useDeleteBranch()
+
+    const stashes = useStashes(repositoryId)
+    const saveStash = useSaveStash()
+    const applyStash = useApplyStash()
+    const popStash = usePopStash()
+    const dropStash = useDropStash()
 
     // The branch a right-click opened the context menu on, where to anchor it,
     // and whether it's a remote-tracking branch (which offers delete only).
@@ -228,6 +339,15 @@ export function Sidebar() {
     // and the menu's own first action button, so focus lands there on open.
     const triggerRef = useRef<HTMLElement | null>(null)
     const menuItemRef = useRef<HTMLButtonElement | null>(null)
+
+    // The stash a right-click opened the context menu on, and where to anchor it.
+    // A separate menu from the branch one above: different rows, different actions.
+    const [stashMenu, setStashMenu] = useState<
+        { entry: StashEntry; x: number; y: number } | null
+    >(null)
+    const [showNewStash, setShowNewStash] = useState(false)
+    const stashTriggerRef = useRef<HTMLElement | null>(null)
+    const stashMenuItemRef = useRef<HTMLButtonElement | null>(null)
 
     const {head, local, remote, tags} = useMemo(() => {
         const all: RefLabel[] = refs.data?.refs ?? []
@@ -292,6 +412,62 @@ export function Sidebar() {
         event.preventDefault()
         triggerRef.current = event.currentTarget as HTMLElement
         setMenu({name, x: event.clientX, y: event.clientY, remote})
+    }
+
+    function closeStashMenu() {
+        setStashMenu(null)
+        stashTriggerRef.current?.focus()
+        stashTriggerRef.current = null
+    }
+
+    useEffect(() => {
+        if (repositoryId == null && stashMenu != null) closeStashMenu()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repositoryId, stashMenu])
+
+    useEffect(() => {
+        if (stashMenu == null) return
+        const close = () => closeStashMenu()
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') close()
+        }
+        window.addEventListener('keydown', onKey)
+        window.addEventListener('scroll', close, true)
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            window.removeEventListener('scroll', close, true)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stashMenu])
+
+    useEffect(() => {
+        if (stashMenu != null) stashMenuItemRef.current?.focus()
+    }, [stashMenu])
+
+    function openStashMenu(entry: StashEntry, event: ReactMouseEvent) {
+        event.preventDefault()
+        stashTriggerRef.current = event.currentTarget as HTMLElement
+        setStashMenu({entry, x: event.clientX, y: event.clientY})
+    }
+
+    function runApply(entry: StashEntry) {
+        if (repositoryId == null) return
+        applyStash.mutate({repositoryId, index: entry.index})
+    }
+
+    function runPop() {
+        if (stashMenu == null || repositoryId == null) return
+        popStash.mutate({repositoryId, index: stashMenu.entry.index})
+        closeStashMenu()
+    }
+
+    function runDropStash() {
+        if (stashMenu == null || repositoryId == null) return
+        const {entry} = stashMenu
+        const label = entry.message.trim() !== '' ? entry.message : `stash@{${entry.index}}`
+        if (!window.confirm(t('stash.dropConfirm', {message: label}))) return
+        dropStash.mutate({repositoryId, index: entry.index})
+        closeStashMenu()
     }
 
     function runMerge() {
@@ -439,6 +615,83 @@ export function Sidebar() {
                 </Section>
 
                 <Section title={t('sidebar.tags')}>{renderRefs(tags, false)}</Section>
+
+                <Section
+                    title={t('sidebar.stashes')}
+                    action={
+                        repositoryId != null ? (
+                            <button
+                                type="button"
+                                onClick={() => setShowNewStash((v) => !v)}
+                                aria-expanded={showNewStash}
+                                aria-label={t('sidebar.newStash')}
+                                title={t('sidebar.newStash')}
+                                className="flex h-4 w-4 select-none items-center justify-center rounded text-[13px] leading-none text-muted outline-none hover:bg-elevated hover:text-primary focus-visible:ring-2 focus-visible:ring-accent/60"
+                            >
+                                +
+                            </button>
+                        ) : null
+                    }
+                >
+                    {showNewStash ? (
+                        <NewStashForm
+                            pending={saveStash.isPending}
+                            onCancel={() => setShowNewStash(false)}
+                            onSubmit={(message, includeUntracked) => {
+                                if (repositoryId == null) return
+                                saveStash.mutate(
+                                    {repositoryId, message: message === '' ? undefined : message, includeUntracked},
+                                    {onSuccess: () => setShowNewStash(false)},
+                                )
+                            }}
+                        />
+                    ) : null}
+                    {saveStash.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('stash.saveFailed')}: {t(apiErrorKey(saveStash.error))}
+                        </p>
+                    ) : null}
+                    {applyStash.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('stash.applyFailed')}: {t(apiErrorKey(applyStash.error))}
+                        </p>
+                    ) : null}
+                    {popStash.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('stash.popFailed')}: {t(apiErrorKey(popStash.error))}
+                        </p>
+                    ) : null}
+                    {dropStash.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('stash.dropFailed')}: {t(apiErrorKey(dropStash.error))}
+                        </p>
+                    ) : null}
+                    {repositoryId == null ? (
+                        <SectionEmpty>{t('sidebar.noRepository')}</SectionEmpty>
+                    ) : stashes.isPending ? (
+                        <p className="flex items-center gap-1.5 px-2 py-0.5 text-xs text-muted">
+                            <Spinner/>
+                            {t('stash.loading')}
+                        </p>
+                    ) : stashes.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('stash.loadFailed')}
+                        </p>
+                    ) : (stashes.data ?? []).length === 0 ? (
+                        <SectionEmpty>{t('sidebar.emptySection')}</SectionEmpty>
+                    ) : (
+                        (stashes.data ?? []).map((entry) => (
+                            <StashItem
+                                key={entry.index}
+                                entry={entry}
+                                disabled={applyStash.isPending}
+                                onApply={() => runApply(entry)}
+                                onContextMenu={(event) => openStashMenu(entry, event)}
+                                menuOpen={stashMenu?.entry.index === entry.index}
+                            />
+                        ))
+                    )}
+                </Section>
             </nav>
 
             {menu != null ? (
@@ -479,6 +732,57 @@ export function Sidebar() {
                             className="block w-full px-3 py-1 text-left text-vcs-deleted outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {t('branch.delete')}
+                        </button>
+                    </div>
+                </>
+            ) : null}
+
+            {stashMenu != null ? (
+                <>
+                    {/* A full-screen catcher closes the menu on any outside click. */}
+                    <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => closeStashMenu()}
+                        onContextMenu={(event) => {
+                            event.preventDefault()
+                            closeStashMenu()
+                        }}
+                    />
+                    <div
+                        role="menu"
+                        style={{top: stashMenu.y, left: stashMenu.x}}
+                        className="fixed z-50 min-w-max rounded-md border border-border bg-elevated py-1 text-[13px] shadow-lg"
+                    >
+                        <button
+                            ref={stashMenuItemRef}
+                            type="button"
+                            role="menuitem"
+                            disabled={applyStash.isPending}
+                            onClick={() => {
+                                runApply(stashMenu.entry)
+                                closeStashMenu()
+                            }}
+                            className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {t('stash.apply')}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            disabled={popStash.isPending}
+                            onClick={runPop}
+                            className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {t('stash.pop')}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            disabled={dropStash.isPending}
+                            onClick={runDropStash}
+                            className="block w-full px-3 py-1 text-left text-vcs-deleted outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {t('stash.drop')}
                         </button>
                     </div>
                 </>
