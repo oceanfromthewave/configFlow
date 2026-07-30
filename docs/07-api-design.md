@@ -16,7 +16,7 @@
   "status": 409,
   "detail": "3 files are conflicted",
   "code": "MERGE_CONFLICT",              // 프론트 분기용 안정 코드
-  "context": { "conflictedFiles": ["src/a.ts", "..."] }
+  "conflictedPaths": ["src/a.ts", "..."] // 최상위 속성 (context 안이 아님)
 }
 ```
 
@@ -141,7 +141,7 @@ data: { "operationId": "…", "percent": 42, "phase": "Receiving objects", "deta
 
 event: operation.completed
 data: { "operationId": "…", "state": "SUCCEEDED|FAILED|CANCELLED",
-        "error": { "code": "MERGE_CONFLICT", "message": "…" } }
+        "error": null | { "code": "MERGE_CONFLICT", "detail": "…", "context": { … } } }
 // 실패 시에만 error 채워짐(성공/취소는 null). 충돌은 state=FAILED + error.code=MERGE_CONFLICT 하나로만 신호한다(별도 conflicted 필드 없음).
 
 event: workingtree.changed          // 파일 watcher
