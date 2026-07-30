@@ -1,5 +1,6 @@
 package dev.configflow.infrastructure.git;
 
+import dev.configflow.domain.vcs.exception.StashDropAfterApplyException;
 import dev.configflow.domain.vcs.exception.VcsException;
 import dev.configflow.domain.vcs.exception.VcsPreconditionException;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
@@ -114,10 +115,8 @@ final class GitStashes implements StashOperations
 			}
 			catch(GitAPIException | JGitInternalException e)
 			{
-				throw new VcsException(
-						"Stash applied but failed to drop stash@{" + index + "} in " + repo.localPath()
-								+ "; drop it manually to avoid re-applying",
-						e);
+				throw new StashDropAfterApplyException(
+						"Stash applied but failed to drop stash@{" + index + "} in " + repo.localPath() + "; drop it manually to avoid re-applying", e);
 			}
 		}
 		catch(InvalidRefNameException | RevisionSyntaxException e)
@@ -160,6 +159,10 @@ final class GitStashes implements StashOperations
 	private static void requireExists(Git git, RepositoryHandle repo, int index) throws GitAPIException
 	{
 		int count = 0;
+		if(index < 0)
+		{
+			throw new NoSuchElementException("Stash not found: stash@{" + index + "}");
+		}
 		for(RevCommit ignored : git.stashList().call())
 		{
 			count++;
