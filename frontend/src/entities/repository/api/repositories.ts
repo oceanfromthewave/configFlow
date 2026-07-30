@@ -13,6 +13,7 @@ import type {
     HistoryPage,
     RefList,
     RepositorySummary,
+    StashEntry,
     WorkingTreeStatus,
 } from '@/entities/repository/model/types'
 import {apiFetch, queryKeys} from '@/shared/api'
@@ -459,5 +460,83 @@ export function useCommit() {
             }),
         onSuccess: (_result, {repositoryId}) =>
             invalidateRepository(queryClient, repositoryId),
+    })
+}
+
+export interface SaveStashPayload {
+    repositoryId: string
+    message?: string
+    includeUntracked?: boolean
+}
+
+export interface StashIndexPayload {
+    repositoryId: string
+    index: number
+}
+
+/** Stashes of one repository, most recent first (`stash@{0}` is `index: 0`). */
+export function useStashes(repositoryId: string | null) {
+    return useQuery({
+        queryKey: queryKeys.stashes(repositoryId ?? 'none'),
+        queryFn: () => apiFetch<StashEntry[]>(`/repositories/${repositoryId}/stashes`),
+        enabled: repositoryId != null,
+    })
+}
+
+/**
+ * Saves the working tree as a new stash and reverts it.
+ *
+ * Like checkout and merge, this answers as soon as the work is queued; the
+ * refreshed stash list and working-tree status arrive later over SSE.
+ */
+export function useSaveStash() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, message, includeUntracked}: SaveStashPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/stashes`, {
+                method: 'POST',
+                body: {message, includeUntracked},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/** Applies a stash onto the working tree, keeping the stash entry. */
+export function useApplyStash() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, index}: StashIndexPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/stashes/${index}/apply`, {
+                method: 'POST',
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/** Applies a stash onto the working tree and drops it on success. */
+export function usePopStash() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, index}: StashIndexPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/stashes/${index}/pop`, {
+                method: 'POST',
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/** Deletes a stash without applying it. */
+export function useDropStash() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, index}: StashIndexPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/stashes/${index}`, {
+                method: 'DELETE',
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
     })
 }

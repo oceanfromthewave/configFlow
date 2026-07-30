@@ -21,6 +21,8 @@ export const queryKeys = {
     ['repositories', repositoryId, 'graph'] as const,
   conflicts: (repositoryId: string) =>
     ['repositories', repositoryId, 'conflicts'] as const,
+  stashes: (repositoryId: string) =>
+    ['repositories', repositoryId, 'stashes'] as const,
 
   operations: () => ['operations'] as const,
   operation: (operationId: string) => ['operations', operationId] as const,
@@ -34,4 +36,5 @@ export const OPERATION_AFFECTED_SECTIONS = [
   'history',
   'refs',
   'graph',
+  'stashes',
 ] as const

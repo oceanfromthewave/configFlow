@@ -5,6 +5,7 @@ import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
 import dev.configflow.application.repository.RepositoryService;
+import dev.configflow.application.stash.StashService;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.OperationEvents;
 import dev.configflow.domain.operation.OperationHistoryStore;
@@ -98,6 +99,12 @@ public class OperationConfig {
     public BranchService branchService(
             VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events) {
         return new BranchService(vcsAccess, operationQueue, events);
+    }
+
+    @Bean
+    public StashService stashService(
+            VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events) {
+        return new StashService(vcsAccess, operationQueue, events);
     }
 
     @Bean
