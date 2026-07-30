@@ -57,6 +57,18 @@ public final class RepositoryService
 		return repository;
 	}
 
+	public Repository initialize(Path localPath)
+	{
+		Path canonical = localPath.toAbsolutePath().normalize();
+		VcsProvider provider = providers.byType(VcsType.GIT).orElseThrow(() -> new IllegalStateException("No Git provider available"));
+		if(!(provider instanceof RepositoryOperations engine))
+		{
+			throw new UnsupportedOperationException("The Git provider cannot initalise repositories");
+		}
+		engine.init(canonical);
+		return register(canonical);
+	}
+
 	/** All registered repositories, most recently opened first. */
 	public List<Repository> list()
 	{

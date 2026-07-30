@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import {
+  useInitRepository,
   useOpenRepository,
   useRegisterRepository,
   useRepositories,
@@ -61,11 +62,15 @@ export function WelcomePage() {
 
   const repositories = useRepositories()
   const registerRepository = useRegisterRepository()
+  const initRepository = useInitRepository()
   const openRepository = useOpenRepository()
 
-  const [pathFormOpen, setPathFormOpen] = useState(false)
+  const [pathAction, setPathAction] = useState<'add' | 'init' | null>(null)
   const [cloneOpen, setCloneOpen] = useState(false)
   const [localPath, setLocalPath] = useState('')
+
+  const mutationFor = (action: 'add' | 'init') =>
+    action === 'init' ? initRepository : registerRepository
 
   const all = repositories.data ?? []
   const favorites = all.filter((repo) => repo.favorite)
@@ -87,26 +92,28 @@ export function WelcomePage() {
    * API deals in handles and `webkitdirectory` in relative names — so the text
    * field is not a lesser alternative, it is the only thing that works there.
    */
-  async function addLocal() {
+  async function pickOrForm(action: 'add' | 'init') {
     if (!canPickDirectory()) {
-      setPathFormOpen((isOpen) => !isOpen)
+      setPathAction((current) => (current === action ? null : action))
       return
     }
-    registerRepository.reset()
+    const mutation = mutationFor(action)
+    mutation.reset()
     const picked = await pickDirectory()
     if (picked != null) {
-      registerRepository.mutate(picked)
+      mutation.mutate(picked)
     }
   }
 
   function submitPath(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (pathAction == null) return
     const trimmed = localPath.trim()
     if (trimmed.length === 0) return
-    registerRepository.mutate(trimmed, {
+    mutationFor(pathAction).mutate(trimmed, {
       onSuccess: () => {
         setLocalPath('')
-        setPathFormOpen(false)
+        setPathAction(null)
       },
     })
   }
@@ -126,16 +133,16 @@ export function WelcomePage() {
             <Button
               variant="primary"
               onClick={() => {
-                setPathFormOpen(false)
+                setPathAction(null)
                 setCloneOpen((isOpen) => !isOpen)
               }}
             >
               {t('welcome.clone')}
             </Button>
-            <Button onClick={addLocal} disabled={registerRepository.isPending}>
+            <Button onClick={() => pickOrForm('add')} disabled={registerRepository.isPending}>
               {t('welcome.addLocal')}
             </Button>
-            <Button disabled title={t('welcome.comingSoon')}>
+            <Button onClick={() => pickOrForm('init')} disabled={initRepository.isPending}>
               {t('welcome.init')}
             </Button>
           </div>
@@ -143,40 +150,60 @@ export function WelcomePage() {
           {cloneOpen ? <CloneDialog onClose={() => setCloneOpen(false)} /> : null}
 
           {/* Only reachable outside Electron, where no OS picker exists. */}
-          {pathFormOpen ? (
+          {pathAction != null ? (
             <form onSubmit={submitPath} className="flex flex-col gap-2">
               <div className="flex gap-2">
                 <input
                   autoFocus
                   value={localPath}
                   onChange={(event) => setLocalPath(event.target.value)}
-                  placeholder={t('welcome.addLocalPlaceholder')}
-                  aria-label={t('welcome.addLocalPlaceholder')}
+                  placeholder={
+                    pathAction === 'init'
+                      ? t('welcome.initPlaceholder')
+                      : t('welcome.addLocalPlaceholder')
+                  }
+                  aria-label={
+                    pathAction === 'init'
+                      ? t('welcome.initPlaceholder')
+                      : t('welcome.addLocalPlaceholder')
+                  }
                   className="flex-1 rounded-md border border-border bg-elevated px-3 py-1.5 text-sm text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
                 />
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={registerRepository.isPending}
+                  disabled={mutationFor(pathAction).isPending}
                 >
-                  {registerRepository.isPending
-                    ? t('welcome.registering')
-                    : t('welcome.addLocalSubmit')}
+                  {pathAction === 'init'
+                    ? initRepository.isPending
+                      ? t('welcome.initializing')
+                      : t('welcome.initSubmit')
+                    : registerRepository.isPending
+                      ? t('welcome.registering')
+                      : t('welcome.addLocalSubmit')}
                 </Button>
               </div>
               <p className="text-xs text-muted">{t('welcome.noPickerHint')}</p>
             </form>
           ) : null}
 
-          {registerRepository.isPending && !pathFormOpen ? (
+          {/* Picker path (no form): show progress/errors on their own. */}
+          {registerRepository.isPending && pathAction == null ? (
             <p className="text-xs text-muted">{t('welcome.registering')}</p>
           ) : null}
+          {initRepository.isPending && pathAction == null ? (
+            <p className="text-xs text-muted">{t('welcome.initializing')}</p>
+          ) : null}
 
-          {/* Outside the form: with the OS picker there is no form to attach it to. */}
           {registerRepository.isError ? (
             <p className="text-xs text-vcs-deleted">
               {t('welcome.registerFailed')}:{' '}
               {t(apiErrorKey(registerRepository.error))}
+            </p>
+          ) : null}
+          {initRepository.isError ? (
+            <p className="text-xs text-vcs-deleted">
+              {t('welcome.initFailed')}: {t(apiErrorKey(initRepository.error))}
             </p>
           ) : null}
         </div>
