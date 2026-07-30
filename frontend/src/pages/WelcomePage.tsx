@@ -93,6 +93,9 @@ export function WelcomePage() {
    * field is not a lesser alternative, it is the only thing that works there.
    */
   async function pickOrForm(action: 'add' | 'init') {
+    // Keep the two entry points mutually exclusive: opening the folder flow
+    // closes the clone dialog so both are never rendered at once.
+    setCloneOpen(false)
     if (!canPickDirectory()) {
       setPathAction((current) => (current === action ? null : action))
       return

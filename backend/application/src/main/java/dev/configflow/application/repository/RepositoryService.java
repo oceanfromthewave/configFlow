@@ -60,10 +60,13 @@ public final class RepositoryService
 	public Repository initialize(Path localPath)
 	{
 		Path canonical = localPath.toAbsolutePath().normalize();
+		repositoryStore.findByLocalPath(canonical).ifPresent(existing -> {
+			throw new IllegalArgumentException("Repository already registered: " + canonical);
+		});
 		VcsProvider provider = providers.byType(VcsType.GIT).orElseThrow(() -> new IllegalStateException("No Git provider available"));
 		if(!(provider instanceof RepositoryOperations engine))
 		{
-			throw new UnsupportedOperationException("The Git provider cannot initalise repositories");
+			throw new UnsupportedOperationException("The Git provider cannot initialise repositories");
 		}
 		engine.init(canonical);
 		return register(canonical);

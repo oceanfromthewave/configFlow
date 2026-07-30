@@ -100,6 +100,8 @@ class RepositoryServiceTest {
         service.initialize(repoDir);
 
         assertThrows(IllegalArgumentException.class, () -> service.initialize(repoDir));
+        // Rejected before init ran, so the working copy was not re-created.
+        assertEquals(1, provider.initCount);
     }
 
     @Test
@@ -398,6 +400,7 @@ class RepositoryServiceTest {
         }
 
         Path initialised;
+        int initCount;
 
         @Override
         public RepositoryHandle open(Path localPath) {
@@ -407,6 +410,7 @@ class RepositoryServiceTest {
         @Override
         public RepositoryHandle init(Path path) {
             initialised = path;
+            initCount++;
             return new RepositoryHandle(path, VcsType.GIT);
         }
 
