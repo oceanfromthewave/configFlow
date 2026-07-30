@@ -158,11 +158,11 @@ final class GitStashes implements StashOperations
 	/** Bounds-checks {@code index} up front so an out-of-range value fails as "not found" rather than as a translated JGit engine error. */
 	private static void requireExists(Git git, RepositoryHandle repo, int index) throws GitAPIException
 	{
-		int count = 0;
 		if(index < 0)
 		{
-			throw new NoSuchElementException("Stash not found: stash@{" + index + "}");
+			throw new IllegalArgumentException("stash index must be non-negative: " + index);
 		}
+		int count = 0;
 		for(RevCommit ignored : git.stashList().call())
 		{
 			count++;
