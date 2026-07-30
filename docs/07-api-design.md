@@ -9,7 +9,7 @@
 
 ### 에러 응답 (RFC 9457 Problem Details)
 
-```json
+```jsonc
 {
   "type": "urn:configflow:error:merge-conflict",
   "title": "Merge resulted in conflicts",
@@ -20,18 +20,19 @@
 }
 ```
 
-주요 에러 코드 (정본: `domain/operation/OperationFailures.java`): `VALIDATION_ERROR`(400),
-`NOT_FOUND`(404), `VCS_AUTH_REQUIRED`(자격증명 재요청 플로우), `MERGE_CONFLICT`,
-`CONFLICT`(전제조건 위반 — 비-FF 거부 등), `VCS_NETWORK_ERROR`, `CANCELLED`,
-`CAPABILITY_NOT_SUPPORTED`(SVN에 stash 요청 등 — 400), `INTERNAL_ERROR`.
+주요 에러 코드 (정본: `domain/operation/OperationFailures.java`, HTTP 매핑: `api/error/ApiExceptionHandler`):
+`VALIDATION_ERROR`(400), `NOT_FOUND`(404), `CAPABILITY_NOT_SUPPORTED`(400 — VCS가 지원하지 않는 기능 요청),
+`CONFLICT`(409 — 전제조건 위반, 비-FF 거부 등), `MERGE_CONFLICT`(409),
+`VCS_AUTH_REQUIRED`(401, 자격증명 재요청 플로우), `VCS_NETWORK_ERROR`(502), `CANCELLED`, `INTERNAL_ERROR`(500).
 토큰 인증 실패는 `AUTH_TOKEN_INVALID`(401).
 
 ### 실행 모델
 
 - **조회성 API**: 동기 응답.
 - **변경성/장기 API**: `202 Accepted` + `Operation` 반환 → 진행률은 SSE로 구독. 짧은 작업(브랜치 생성 등)도 동일 모델로 통일해 프론트 처리 단순화.
+- **예외 — 로컬 즉시 작업**: commit처럼 네트워크 없이 즉시 끝나고 큐를 거치지 않는 작업은 **동기 200**으로 결과를 바로 반환한다(§2 Commits 참고).
 
-```json
+```jsonc
 // 202 응답 본문
 { "operationId": "…", "type": "CLONE", "state": "QUEUED" }
 ```
@@ -128,7 +129,7 @@
 | GET/PUT | `/settings` · `/settings/{key}` | 설정 |
 | POST | `/credentials` / GET `/credentials` / DELETE `/credentials/{key}` | 자격 증명 (비밀은 OS store로) |
 | GET | `/ai/features` | 활성 Provider의 지원 기능 (v1: 빈 배열) |
-| POST | `/ai/commit-message` 등 | v1: 501 `CAPABILITY_NOT_SUPPORTED` |
+| POST | `/ai/commit-message` 등 | v1: 미구현 (진입점 UI disabled). 구현 시 501 `NOT_IMPLEMENTED` — VCS 기능 미지원의 `CAPABILITY_NOT_SUPPORTED`(400)와 구분 |
 
 ## 3. SSE 이벤트 스트림
 
@@ -139,8 +140,9 @@ event: operation.progress
 data: { "operationId": "…", "percent": 42, "phase": "Receiving objects", "detail": "…" }
 
 event: operation.completed
-data: { "operationId": "…", "state": "SUCCEEDED|FAILED|CANCELLED", "error": null,
-        "result": { "conflicted": false } }
+data: { "operationId": "…", "state": "SUCCEEDED|FAILED|CANCELLED",
+        "error": { "code": "MERGE_CONFLICT", "message": "…" } }
+// 실패 시에만 error 채워짐(성공/취소는 null). 충돌은 state=FAILED + error.code=MERGE_CONFLICT 하나로만 신호한다(별도 conflicted 필드 없음).
 
 event: workingtree.changed          // 파일 watcher
 data: { "repositoryId": "…" }
