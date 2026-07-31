@@ -40,6 +40,8 @@
   "diff.stagedSide": "Staged · against HEAD",
   "diff.unstagedSide": "Working tree · against the index",
   "diff.stats": "+{added} −{removed}",
+  "diff.unifiedView": "Unified",
+  "diff.splitView": "Split",
   "bottomPanel.console": "Console",
   "bottomPanel.operations": "Operations",
   "bottomPanel.log": "Log",

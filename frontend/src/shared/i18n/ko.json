@@ -40,6 +40,8 @@
   "diff.stagedSide": "스테이지됨 · HEAD 대비",
   "diff.unstagedSide": "작업 트리 · 인덱스 대비",
   "diff.stats": "+{added} −{removed}",
+  "diff.unifiedView": "통합",
+  "diff.splitView": "분할",
   "bottomPanel.console": "콘솔",
   "bottomPanel.operations": "작업",
   "bottomPanel.log": "로그",
