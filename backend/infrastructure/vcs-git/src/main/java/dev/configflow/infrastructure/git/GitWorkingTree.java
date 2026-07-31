@@ -48,7 +48,7 @@ final class GitWorkingTree
 				conflicted.add(ConflictedFile.unresolved(Path.of(path)));
 			}
 
-			return new WorkingTreeStatus(staged, unstaged, conflicted);
+			return new WorkingTreeStatus(staged, unstaged, conflicted, git.getRepository().getRepositoryState().isRebasing());
 		}
 		catch(GitAPIException e)
 		{

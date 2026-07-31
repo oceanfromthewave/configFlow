@@ -221,6 +221,28 @@ class GitRebaseTest {
     }
 
     @Test
+    void statusReportsRebasingOnlyWhileTheRebaseIsPaused() throws Exception {
+        branches.createBranch(handle, "topic", null, true);
+        write("base.txt", "topic version\n");
+        commit("base.txt", "Topic edits base");
+
+        branches.checkout(handle, "master");
+        write("base.txt", "main version\n");
+        commit("base.txt", "Main edits base");
+
+        branches.checkout(handle, "topic");
+        assertFalse(workingTree.status(handle).rebasing());
+
+        assertThrows(MergeConflictException.class, () -> rebases.start(handle, "master"));
+        // This flag is what lets the UI offer continue / abort / skip; without it a
+        // stopped rebase has no way out of the interface.
+        assertTrue(workingTree.status(handle).rebasing());
+
+        rebases.abort(handle);
+        assertFalse(workingTree.status(handle).rebasing());
+    }
+
+    @Test
     void continueFailsWhenNoRebaseIsInProgress() {
         // WrongRepositoryStateException is a child of GitAPIException; catching it
         // after the general handler would surface this as a 500 instead of a 409.

@@ -150,7 +150,8 @@ class RepositoryControllerTest {
         WorkingTreeStatus status = new WorkingTreeStatus(
                 List.of(FileChange.of(Path.of("src/staged.txt"), ChangeType.ADDED)),
                 List.of(FileChange.of(Path.of("changed.txt"), ChangeType.MODIFIED)),
-                List.of());
+                List.of(),
+                false);
         when(repositoryService.status(any())).thenReturn(status);
 
         mvc.perform(get("/api/v1/repositories/" + UUID.randomUUID() + "/status"))

@@ -58,13 +58,13 @@ public class RepositoryController
 	}
 
 	/** Working-tree status: three buckets of changes. */
-	public record WorkingTreeStatusResponse(List<FileChangeResponse> staged, List<FileChangeResponse> unstaged, List<ConflictedFileResponse> conflicted)
+	public record WorkingTreeStatusResponse(List<FileChangeResponse> staged, List<FileChangeResponse> unstaged, List<ConflictedFileResponse> conflicted, boolean rebasing)
 	{
-
 		static WorkingTreeStatusResponse from(WorkingTreeStatus status)
 		{
 			return new WorkingTreeStatusResponse(status.staged().stream().map(FileChangeResponse::from).toList(),
-					status.unstaged().stream().map(FileChangeResponse::from).toList(), status.conflicted().stream().map(ConflictedFileResponse::from).toList());
+					status.unstaged().stream().map(FileChangeResponse::from).toList(), status.conflicted().stream().map(ConflictedFileResponse::from).toList(),
+					status.rebasing());
 		}
 	}
 

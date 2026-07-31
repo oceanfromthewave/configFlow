@@ -20,6 +20,7 @@ import {
     usePopStash,
     useRefs,
     useSaveStash,
+    useStartRebase,
     useStashes,
 } from '@/entities/repository/api/repositories'
 import type {RefLabel, StashEntry} from '@/entities/repository/model/types'
@@ -393,6 +394,7 @@ export function Sidebar() {
     const deleteBranch = useDeleteBranch()
     const createTag = useCreateTag()
     const deleteTag = useDeleteTag()
+    const startRebase = useStartRebase()
 
     const stashes = useStashes(repositoryId)
     const saveStash = useSaveStash()
@@ -592,6 +594,16 @@ export function Sidebar() {
         closeMenu()
     }
 
+    // Rebasing rewrites the current branch's commits, so it asks first — unlike
+    // merge, which only adds to history.
+    function runRebase() {
+        if (menu == null || repositoryId == null) return
+        const upstream = menu.name
+        if (!window.confirm(t('rebase.confirm', {upstream}))) return
+        startRebase.mutate({repositoryId, upstream})
+        closeMenu()
+    }
+
     // Shift-click force-deletes (skips the "not fully merged" guard). A plain
     // click still asks for confirmation either way — deleting a branch is not
     // undoable from this UI.
@@ -731,6 +743,11 @@ export function Sidebar() {
                     {merge.isError ? (
                         <p className="px-2 py-0.5 text-xs text-vcs-deleted">
                             {t('branch.mergeFailed')}: {t(apiErrorKey(merge.error))}
+                        </p>
+                    ) : null}
+                    {startRebase.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('rebase.failed')}: {t(apiErrorKey(startRebase.error))}
                         </p>
                     ) : null}
                     {deleteBranch.isError ? (
@@ -892,6 +909,17 @@ export function Sidebar() {
                                 className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {t('branch.mergeInto', {source: menu.name})}
+                            </button>
+                        ) : null}
+                        {!menu.remote && canMerge ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                disabled={startRebase.isPending}
+                                onClick={runRebase}
+                                className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {t('rebase.onto', {upstream: menu.name})}
                             </button>
                         ) : null}
                         <button

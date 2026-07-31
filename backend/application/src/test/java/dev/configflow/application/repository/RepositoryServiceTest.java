@@ -110,7 +110,8 @@ class RepositoryServiceTest {
         provider.status = new WorkingTreeStatus(
                 List.of(),
                 List.of(FileChange.of(Path.of("new.txt"), ChangeType.UNTRACKED)),
-                List.of());
+                List.of(),
+                false);
 
         WorkingTreeStatus status = service.status(id);
 

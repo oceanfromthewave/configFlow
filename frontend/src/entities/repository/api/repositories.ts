@@ -447,6 +447,56 @@ export function useDeleteTag() {
     })
 }
 
+export interface StartRebasePayload {
+    repositoryId: string
+    upstream: string
+}
+
+/**
+ * Replays the current branch on top of `upstream`.
+ *
+ * Like merge, this answers as soon as the work is queued. A rebase that stops on
+ * conflicts comes back as a failed operation on the stream; the working tree then
+ * reports `rebasing`, which is what surfaces the continue/abort/skip actions.
+ */
+export function useStartRebase() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, upstream}: StartRebasePayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/rebase`, {
+                method: 'POST',
+                body: {upstream},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/** Continue / abort / skip all take no body and share one shape. */
+function useRebaseStep(step: 'continue' | 'abort' | 'skip') {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId}: {repositoryId: string}) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/rebase/${step}`, {
+                method: 'POST',
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+export function useContinueRebase() {
+    return useRebaseStep('continue')
+}
+
+export function useAbortRebase() {
+    return useRebaseStep('abort')
+}
+
+export function useSkipRebase() {
+    return useRebaseStep('skip')
+}
+
 interface PathsPayload {
     repositoryId: string
     paths: string[]

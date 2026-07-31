@@ -45,6 +45,8 @@ export interface WorkingTreeStatus {
   staged: FileChange[]
   unstaged: FileChange[]
   conflicted: ConflictedFile[]
+  /** True while a rebase is stopped mid-flight, awaiting continue/abort/skip. */
+  rebasing: boolean
 }
 
 export interface RevisionAuthor {
