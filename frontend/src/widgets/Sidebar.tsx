@@ -22,6 +22,7 @@ import {
     useSaveStash,
     useStashes,
 } from '@/entities/repository/api/repositories'
+import {buildBranchTree, type BranchTreeNode} from '@/entities/repository/lib/branchTree'
 import type {RefLabel, StashEntry} from '@/entities/repository/model/types'
 import {useT} from '@/shared/i18n'
 import {apiErrorKey} from '@/shared/lib/apiErrorMessage'
@@ -270,6 +271,7 @@ function NewTagForm({
 
 function RefItem({
                      name,
+                     label = name,
                      current,
                      currentLabel,
                      onCheckout,
@@ -279,6 +281,9 @@ function RefItem({
                      menuOpen,
                  }: {
     name: string
+    // Text shown in the row; defaults to the full ref name. A tree leaf passes
+    // just its last path segment while `name` stays the full ref for actions.
+    label?: string
     current: boolean
     currentLabel: string
     onCheckout?: () => void
@@ -300,7 +305,7 @@ function RefItem({
           ●
         </span>
             ) : null}
-            <span className="min-w-0 truncate">{name}</span>
+            <span className="min-w-0 truncate">{label}</span>
         </>
     )
 
@@ -407,6 +412,18 @@ export function Sidebar() {
     >(null)
 
     const [showNewBranch, setShowNewBranch] = useState(false)
+
+    // Folder paths (prefixed "local:"/"remote:" so the two trees don't collide)
+    // that are currently collapsed; everything else renders expanded.
+    const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
+    function toggleFolder(key: string) {
+        setCollapsedFolders((prev) => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+        })
+    }
 
     // The element that opened the menu, so focus can return to it on close —
     // and the menu's own first action button, so focus lands there on open.
@@ -618,6 +635,9 @@ export function Sidebar() {
         mergeable = false,
         deletable = false,
         remote = false,
+        // Slash-delimited names (branches) fold into a collapsible folder tree;
+        // tags stay a flat list.
+        grouped = false,
         // Branches and tags open different context menus (merge+delete vs.
         // delete-only) backed by different state, so the default here only
         // covers the branch/remote-branch case; tags pass their own.
@@ -647,27 +667,61 @@ export function Sidebar() {
         if (names.length === 0) {
             return <SectionEmpty>{t('sidebar.emptySection')}</SectionEmpty>
         }
-        return names.map((name) => {
+
+        function renderLeaf(name: string, label: string, depth: number) {
             const current = markCurrent && name === head
             // Merging or deleting a branch you're on doesn't make sense, so the
             // current one is skipped either way.
             const hasMenu = (mergeable && canMerge && !current) || (deletable && !current)
             return (
-                <RefItem
-                    key={name}
-                    name={name}
-                    current={current}
-                    currentLabel={t('sidebar.currentBranch')}
-                    checkoutLabel={t('branch.checkout')}
-                    disabled={checkout.isPending}
-                    onCheckout={
-                        checkoutable ? () => checkout.mutate({repositoryId, ref: name}) : undefined
-                    }
-                    onContextMenu={hasMenu ? (event) => onContext(name, event) : undefined}
-                    menuOpen={hasMenu && isMenuOpen(name)}
-                />
+                <div key={name} style={depth > 0 ? {paddingLeft: depth * 14} : undefined}>
+                    <RefItem
+                        name={name}
+                        label={label}
+                        current={current}
+                        currentLabel={t('sidebar.currentBranch')}
+                        checkoutLabel={t('branch.checkout')}
+                        disabled={checkout.isPending}
+                        onCheckout={
+                            checkoutable ? () => checkout.mutate({repositoryId, ref: name}) : undefined
+                        }
+                        onContextMenu={hasMenu ? (event) => onContext(name, event) : undefined}
+                        menuOpen={hasMenu && isMenuOpen(name)}
+                    />
+                </div>
             )
-        })
+        }
+
+        if (!grouped) {
+            return names.map((name) => renderLeaf(name, name, 0))
+        }
+
+        const sectionKey = remote ? 'remote' : 'local'
+
+        function renderTree(nodes: BranchTreeNode[], depth: number): ReactNode {
+            return nodes.map((node) => {
+                if (node.kind === 'leaf') return renderLeaf(node.name, node.label, depth)
+                const key = `${sectionKey}:${node.path}`
+                const collapsed = collapsedFolders.has(key)
+                return (
+                    <div key={key}>
+                        <button
+                            type="button"
+                            onClick={() => toggleFolder(key)}
+                            aria-expanded={!collapsed}
+                            style={{paddingLeft: depth * 14}}
+                            className="flex h-6 w-full select-none items-center gap-1 rounded px-2 text-left text-[13px] text-muted outline-none hover:bg-elevated hover:text-primary focus-visible:ring-2 focus-visible:ring-accent/60"
+                        >
+                            <span className="w-3 shrink-0 text-[10px]">{collapsed ? '▸' : '▾'}</span>
+                            <span className="min-w-0 truncate">{node.label}</span>
+                        </button>
+                        {collapsed ? null : renderTree(node.children, depth + 1)}
+                    </div>
+                )
+            })
+        }
+
+        return renderTree(buildBranchTree(names), 0)
     }
 
     return (
@@ -738,11 +792,11 @@ export function Sidebar() {
                             {t('branch.deleteFailed')}: {t(apiErrorKey(deleteBranch.error))}
                         </p>
                     ) : null}
-                    {renderRefs(local, true, true, true, true, false)}
+                    {renderRefs(local, true, true, true, true, false, true)}
                 </Section>
 
                 <Section title={t('sidebar.remote')}>
-                    {renderRefs(remote, false, false, false, true, true)}
+                    {renderRefs(remote, false, false, false, true, true, true)}
                 </Section>
 
                 <Section
@@ -785,7 +839,7 @@ export function Sidebar() {
                             {t('tag.deleteFailed')}: {t(apiErrorKey(deleteTag.error))}
                         </p>
                     ) : null}
-                    {renderRefs(tags, false, false, false, true, false, openTagMenu, (name) => tagMenu?.name === name)}
+                    {renderRefs(tags, false, false, false, true, false, false, openTagMenu, (name) => tagMenu?.name === name)}
                 </Section>
 
                 <Section
