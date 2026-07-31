@@ -12,7 +12,9 @@ import {
     useApplyStash,
     useCheckout,
     useCreateBranch,
+    useCreateTag,
     useDeleteBranch,
+    useDeleteTag,
     useDropStash,
     useMerge,
     usePopStash,
@@ -197,6 +199,75 @@ function NewStashForm({
     )
 }
 
+/** Inline "create tag" row shown below the TAGS header. */
+function NewTagForm({
+                        onSubmit,
+                        onCancel,
+                        pending,
+                    }: {
+    onSubmit: (name: string, message: string) => void
+    onCancel: () => void
+    pending: boolean
+}) {
+    const t = useT()
+    const [name, setName] = useState('')
+    const [message, setMessage] = useState('')
+
+    function submit(event: FormEvent) {
+        event.preventDefault()
+        const trimmed = name.trim()
+        if (trimmed === '') return
+        onSubmit(trimmed, message.trim())
+    }
+
+    return (
+        <form onSubmit={submit} className="mb-1 flex flex-col gap-1 px-2">
+            <input
+                autoFocus
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Escape') onCancel()
+                }}
+                placeholder={t('tag.namePlaceholder')}
+                aria-label={t('tag.namePlaceholder')}
+                disabled={pending}
+                className="h-6 rounded border border-border bg-base px-1.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            />
+            <input
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Escape') onCancel()
+                }}
+                placeholder={t('tag.messagePlaceholder')}
+                aria-label={t('tag.messagePlaceholder')}
+                disabled={pending}
+                className="h-6 rounded border border-border bg-base px-1.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            />
+            <div className="flex gap-1">
+                <button
+                    type="submit"
+                    disabled={pending || name.trim() === ''}
+                    className="h-6 flex-1 rounded bg-accent px-2 text-[12px] text-white outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {pending ? t('tag.creating') : t('tag.createSubmit')}
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    disabled={pending}
+                    aria-label={t('tag.cancelNewTag')}
+                    title={t('tag.cancelNewTag')}
+                    className="h-6 rounded px-2 text-[12px] text-muted outline-none hover:bg-elevated focus-visible:ring-2 focus-visible:ring-accent/60"
+                >
+                    ✕
+                </button>
+            </div>
+        </form>
+    )
+}
+
 function RefItem({
                      name,
                      current,
@@ -320,6 +391,8 @@ export function Sidebar() {
     const merge = useMerge()
     const createBranch = useCreateBranch()
     const deleteBranch = useDeleteBranch()
+    const createTag = useCreateTag()
+    const deleteTag = useDeleteTag()
 
     const stashes = useStashes(repositoryId)
     const saveStash = useSaveStash()
@@ -348,6 +421,13 @@ export function Sidebar() {
     const [showNewStash, setShowNewStash] = useState(false)
     const stashTriggerRef = useRef<HTMLElement | null>(null)
     const stashMenuItemRef = useRef<HTMLButtonElement | null>(null)
+
+    // The tag a right-click opened the context menu on, and where to anchor it.
+    // A separate menu from the branch one: tags offer delete only, no merge.
+    const [tagMenu, setTagMenu] = useState<{ name: string; x: number; y: number } | null>(null)
+    const [showNewTag, setShowNewTag] = useState(false)
+    const tagTriggerRef = useRef<HTMLElement | null>(null)
+    const tagMenuItemRef = useRef<HTMLButtonElement | null>(null)
 
     const {head, local, remote, tags} = useMemo(() => {
         const all: RefLabel[] = refs.data?.refs ?? []
@@ -450,6 +530,42 @@ export function Sidebar() {
         setStashMenu({entry, x: event.clientX, y: event.clientY})
     }
 
+    function closeTagMenu() {
+        setTagMenu(null)
+        tagTriggerRef.current?.focus()
+        tagTriggerRef.current = null
+    }
+
+    useEffect(() => {
+        if (repositoryId == null && tagMenu != null) closeTagMenu()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repositoryId, tagMenu])
+
+    useEffect(() => {
+        if (tagMenu == null) return
+        const close = () => closeTagMenu()
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') close()
+        }
+        window.addEventListener('keydown', onKey)
+        window.addEventListener('scroll', close, true)
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            window.removeEventListener('scroll', close, true)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tagMenu])
+
+    useEffect(() => {
+        if (tagMenu != null) tagMenuItemRef.current?.focus()
+    }, [tagMenu])
+
+    function openTagMenu(name: string, event: ReactMouseEvent) {
+        event.preventDefault()
+        tagTriggerRef.current = event.currentTarget as HTMLElement
+        setTagMenu({name, x: event.clientX, y: event.clientY})
+    }
+
     function runApply(entry: StashEntry) {
         if (repositoryId == null) return
         applyStash.mutate({repositoryId, index: entry.index})
@@ -487,6 +603,14 @@ export function Sidebar() {
         closeMenu()
     }
 
+    function runDeleteTag() {
+        if (tagMenu == null || repositoryId == null) return
+        const {name} = tagMenu
+        if (!window.confirm(t('tag.deleteConfirm', {name}))) return
+        deleteTag.mutate({repositoryId, name})
+        closeTagMenu()
+    }
+
     function renderRefs(
         names: string[],
         markCurrent: boolean,
@@ -494,6 +618,13 @@ export function Sidebar() {
         mergeable = false,
         deletable = false,
         remote = false,
+        // Branches and tags open different context menus (merge+delete vs.
+        // delete-only) backed by different state, so the default here only
+        // covers the branch/remote-branch case; tags pass their own.
+        onContext: (name: string, event: ReactMouseEvent) => void = (name, event) =>
+            openMenu(name, event, remote),
+        isMenuOpen: (name: string) => boolean = (name) =>
+            menu?.name === name && menu.remote === remote,
     ) {
         if (repositoryId == null) {
             return <SectionEmpty>{t('sidebar.noRepository')}</SectionEmpty>
@@ -532,8 +663,8 @@ export function Sidebar() {
                     onCheckout={
                         checkoutable ? () => checkout.mutate({repositoryId, ref: name}) : undefined
                     }
-                    onContextMenu={hasMenu ? (event) => openMenu(name, event, remote) : undefined}
-                    menuOpen={hasMenu && menu?.name === name && menu.remote === remote}
+                    onContextMenu={hasMenu ? (event) => onContext(name, event) : undefined}
+                    menuOpen={hasMenu && isMenuOpen(name)}
                 />
             )
         })
@@ -614,7 +745,48 @@ export function Sidebar() {
                     {renderRefs(remote, false, false, false, true, true)}
                 </Section>
 
-                <Section title={t('sidebar.tags')}>{renderRefs(tags, false)}</Section>
+                <Section
+                    title={t('sidebar.tags')}
+                    action={
+                        repositoryId != null ? (
+                            <button
+                                type="button"
+                                onClick={() => setShowNewTag((v) => !v)}
+                                aria-expanded={showNewTag}
+                                aria-label={t('sidebar.newTag')}
+                                title={t('sidebar.newTag')}
+                                className="flex h-4 w-4 select-none items-center justify-center rounded text-[13px] leading-none text-muted outline-none hover:bg-elevated hover:text-primary focus-visible:ring-2 focus-visible:ring-accent/60"
+                            >
+                                +
+                            </button>
+                        ) : null
+                    }
+                >
+                    {showNewTag ? (
+                        <NewTagForm
+                            pending={createTag.isPending}
+                            onCancel={() => setShowNewTag(false)}
+                            onSubmit={(name, message) => {
+                                if (repositoryId == null) return
+                                createTag.mutate(
+                                    {repositoryId, name, message: message === '' ? undefined : message},
+                                    {onSuccess: () => setShowNewTag(false)},
+                                )
+                            }}
+                        />
+                    ) : null}
+                    {createTag.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('tag.createFailed')}: {t(apiErrorKey(createTag.error))}
+                        </p>
+                    ) : null}
+                    {deleteTag.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('tag.deleteFailed')}: {t(apiErrorKey(deleteTag.error))}
+                        </p>
+                    ) : null}
+                    {renderRefs(tags, false, false, false, true, false, openTagMenu, (name) => tagMenu?.name === name)}
+                </Section>
 
                 <Section
                     title={t('sidebar.stashes')}
@@ -783,6 +955,36 @@ export function Sidebar() {
                             className="block w-full px-3 py-1 text-left text-vcs-deleted outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {t('stash.drop')}
+                        </button>
+                    </div>
+                </>
+            ) : null}
+
+            {tagMenu != null ? (
+                <>
+                    {/* A full-screen catcher closes the menu on any outside click. */}
+                    <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => closeTagMenu()}
+                        onContextMenu={(event) => {
+                            event.preventDefault()
+                            closeTagMenu()
+                        }}
+                    />
+                    <div
+                        role="menu"
+                        style={{top: tagMenu.y, left: tagMenu.x}}
+                        className="fixed z-50 min-w-max rounded-md border border-border bg-elevated py-1 text-[13px] shadow-lg"
+                    >
+                        <button
+                            ref={tagMenuItemRef}
+                            type="button"
+                            role="menuitem"
+                            disabled={deleteTag.isPending}
+                            onClick={runDeleteTag}
+                            className="block w-full px-3 py-1 text-left text-vcs-deleted outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {t('tag.delete')}
                         </button>
                     </div>
                 </>
