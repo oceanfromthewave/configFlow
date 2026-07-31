@@ -108,6 +108,17 @@ class GitCherryPickTest {
     }
 
     @Test
+    void cherryPickRejectsAWellFormedShaThatNamesNoObject() {
+        // Unlike "no-such-revision" above, a full 40-hex SHA resolves to an ObjectId
+        // without a database lookup; the miss only surfaces once the walk tries to
+        // read it, as a MissingObjectException rather than a null resolve().
+        assertThrows(
+                NoSuchElementException.class,
+                () -> cherryPicks.cherryPick(
+                        handle, List.of(new RevisionId("0123456789012345678901234567890123456789"))));
+    }
+
+    @Test
     void cherryPickStopsOnConflictAndReportsThePaths() throws Exception {
         branches.createBranch(handle, "topic", null, true);
         write("base.txt", "topic version\n");

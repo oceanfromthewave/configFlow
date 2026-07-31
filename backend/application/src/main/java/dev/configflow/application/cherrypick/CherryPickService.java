@@ -44,11 +44,18 @@ public final class CherryPickService
 		return queue.submit(id, OperationType.CHERRY_PICK, context -> {
 			context.log(command, ConsoleLevel.CMD);
 			context.throwIfCancelled();
-			opened.operations().cherryPick(opened.handle(), picked);
-			// Each picked commit is a new commit on the current branch, and the working
-			// tree lands on it — or conflicted, which the panels have to show either way.
-			events.refsChanged(id);
-			events.workingTreeChanged(id);
+			try
+			{
+				opened.operations().cherryPick(opened.handle(), picked);
+			}
+			finally
+			{
+				// Each picked commit is a new commit on the current branch, and the working
+				// tree lands on it — or conflicted, which the panels have to show either
+				// way, so the events fire even when the pick throws on conflict.
+				events.refsChanged(id);
+				events.workingTreeChanged(id);
+			}
 		});
 	}
 
