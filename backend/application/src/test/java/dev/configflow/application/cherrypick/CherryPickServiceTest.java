@@ -17,6 +17,7 @@ import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
+import dev.configflow.domain.vcs.exception.MergeConflictException;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.RevisionId;
 import dev.configflow.domain.vcs.model.VcsType;
@@ -48,7 +49,11 @@ class CherryPickServiceTest {
     Path repoDir;
 
     private CherryPickService service() {
-        VcsAccess access = new VcsAccess(store, new DefaultVcsProviderRegistry(List.of(provider)));
+        return service(provider);
+    }
+
+    private CherryPickService service(FakeCherryPickProvider providerToUse) {
+        VcsAccess access = new VcsAccess(store, new DefaultVcsProviderRegistry(List.of(providerToUse)));
         OperationQueue queue = new OperationQueue(
                 history, OperationEvents.noop(), Clock.fixed(NOW, ZoneOffset.UTC), Runnable::run);
         return new CherryPickService(access, queue, events);
@@ -70,6 +75,19 @@ class CherryPickServiceTest {
 
         assertEquals(OperationType.CHERRY_PICK, operation.type());
         assertEquals(List.of(new RevisionId("abc123"), new RevisionId("def456")), provider.calls);
+        assertEquals(List.of(id), events.refsChanged);
+        assertEquals(List.of(id), events.workingTreeChanged);
+    }
+
+    @Test
+    void cherryPick_publishesBothChangeEventsEvenWhenThePickConflicts() {
+        // A conflicting pick still leaves conflicted files and CHERRY_PICK_HEAD in the
+        // working tree; the panels must refresh to show that, not the stale pre-pick state.
+        CherryPickService service = service(new FakeCherryPickProvider(true));
+        RepositoryId id = register();
+
+        service.cherryPick(id, List.of("abc123"));
+
         assertEquals(List.of(id), events.refsChanged);
         assertEquals(List.of(id), events.workingTreeChanged);
     }
@@ -119,6 +137,15 @@ class CherryPickServiceTest {
     private static final class FakeCherryPickProvider implements VcsProvider, CherryPickOperations {
 
         private final List<RevisionId> calls = new ArrayList<>();
+        private final boolean conflicting;
+
+        FakeCherryPickProvider() {
+            this(false);
+        }
+
+        FakeCherryPickProvider(boolean conflicting) {
+            this.conflicting = conflicting;
+        }
 
         @Override
         public VcsType type() {
@@ -143,6 +170,9 @@ class CherryPickServiceTest {
         @Override
         public void cherryPick(RepositoryHandle repo, List<RevisionId> revisions) {
             calls.addAll(revisions);
+            if (conflicting) {
+                throw new MergeConflictException(List.of());
+            }
         }
     }
 

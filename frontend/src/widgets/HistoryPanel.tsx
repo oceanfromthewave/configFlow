@@ -4,7 +4,6 @@ import {
     useRef,
     useState,
     type FormEvent,
-    type MouseEvent as ReactMouseEvent,
 } from 'react'
 
 import {useCherryPick, useHistory} from '@/entities/repository/api/repositories'
@@ -125,7 +124,7 @@ function CommitRow({
                        laneCount,
                        selected,
                        onSelect,
-                       onContextMenu,
+                       onOpenMenu,
                    }: {
     revision: Revision
     formatDate: (iso: string) => string
@@ -133,7 +132,7 @@ function CommitRow({
     laneCount: number
     selected: boolean
     onSelect: () => void
-    onContextMenu: (event: ReactMouseEvent) => void
+    onOpenMenu: (position: { x: number; y: number }, target: HTMLElement) => void
 }) {
     return (
         <li
@@ -146,11 +145,22 @@ function CommitRow({
             }`}
             style={{height: ROW_HEIGHT}}
             onClick={onSelect}
-            onContextMenu={onContextMenu}
+            onContextMenu={(event) => {
+                event.preventDefault()
+                onOpenMenu({x: event.clientX, y: event.clientY}, event.currentTarget)
+            }}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     onSelect()
+                    return
+                }
+                // The mouse isn't the only way to ask for this row's menu: the dedicated
+                // Menu key, and Shift+F10 on keyboards without one, both mean the same thing.
+                if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+                    event.preventDefault()
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    onOpenMenu({x: rect.left, y: rect.bottom}, event.currentTarget)
                 }
             }}
         >
@@ -202,10 +212,13 @@ export function HistoryPanel() {
         commitTriggerRef.current = null
     }
 
+    // Switching repositories (not just closing one) must drop any open menu: its
+    // revisionId belongs to the previous repository and would otherwise be sent
+    // alongside the new one's repositoryId.
     useEffect(() => {
-        if (repositoryId == null && commitMenu != null) closeCommitMenu()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [repositoryId, commitMenu])
+        setCommitMenu(null)
+        commitTriggerRef.current = null
+    }, [repositoryId])
 
     useEffect(() => {
         if (commitMenu == null) return
@@ -226,10 +239,13 @@ export function HistoryPanel() {
         if (commitMenu != null) commitMenuItemRef.current?.focus()
     }, [commitMenu])
 
-    function openCommitMenu(revisionId: string, event: ReactMouseEvent) {
-        event.preventDefault()
-        commitTriggerRef.current = event.currentTarget as HTMLElement
-        setCommitMenu({revisionId, x: event.clientX, y: event.clientY})
+    function openCommitMenu(
+        revisionId: string,
+        position: { x: number; y: number },
+        target: HTMLElement,
+    ) {
+        commitTriggerRef.current = target
+        setCommitMenu({revisionId, ...position})
     }
 
     function runCherryPick() {
@@ -338,7 +354,9 @@ export function HistoryPanel() {
                                         laneCount={graph.laneCount}
                                         selected={revision.id === selectedId}
                                         onSelect={() => setSelectedId(revision.id)}
-                                        onContextMenu={(event) => openCommitMenu(revision.id, event)}
+                                        onOpenMenu={(position, target) =>
+                                            openCommitMenu(revision.id, position, target)
+                                        }
                                     />
                                 ))}
                             </ul>

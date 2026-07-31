@@ -133,9 +133,13 @@ final class GitCherryPick implements CherryPickOperations
 		{
 			throw new IllegalArgumentException("Not a valid revision: " + revision, e);
 		}
-		catch(IncorrectObjectTypeException | MissingObjectException e)
+		catch(IncorrectObjectTypeException e)
 		{
 			throw new IllegalArgumentException("Revision does not name a commit: " + revision, e);
+		}
+		catch(MissingObjectException e)
+		{
+			throw new NoSuchElementException("Revision not found: " + revision);
 		}
 		catch(IOException e)
 		{
