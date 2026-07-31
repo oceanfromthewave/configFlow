@@ -497,6 +497,30 @@ export function useSkipRebase() {
     return useRebaseStep('skip')
 }
 
+export interface CherryPickPayload {
+    repositoryId: string
+    revisions: string[]
+}
+
+/**
+ * Replays the given commits onto the current branch, in the order given.
+ *
+ * Like rebase, this answers as soon as the work is queued; a conflict comes
+ * back as a failed operation on the stream rather than an error here.
+ */
+export function useCherryPick() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, revisions}: CherryPickPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/cherry-pick`, {
+                method: 'POST',
+                body: {revisions},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
 interface PathsPayload {
     repositoryId: string
     paths: string[]

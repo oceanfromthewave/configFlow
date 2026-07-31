@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -51,6 +51,39 @@ function stubHistory(pages: unknown[]) {
     }),
   )
   return urls
+}
+
+/** Answers GET history requests with one page and records every POST. */
+function stubHistoryAndPost(items: unknown[], postStatus = 202) {
+  const calls: { url: string; body: unknown }[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        calls.push({
+          url: String(input),
+          body: init.body ? JSON.parse(String(init.body)) : null,
+        })
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              postStatus === 202
+                ? { operationId: 'op-1', type: 'CHERRY_PICK', state: 'QUEUED' }
+                : { code: 'CONFLICT' },
+            ),
+            { status: postStatus, headers: { 'content-type': 'application/json' } },
+          ),
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ items, nextCursor: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+    }),
+  )
+  return calls
 }
 
 const initialUiState = useUiStore.getState()
@@ -169,6 +202,30 @@ describe('HistoryPanel', () => {
         '히스토리를 불러오지 못했습니다: 이 VCS는 해당 기능을 지원하지 않습니다',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('cherry-picks a commit onto the current branch from its context menu', async () => {
+    const calls = stubHistoryAndPost([revision('abc1234567890abc1234', 'feat: topic commit')])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderPanel()
+    fireEvent.contextMenu(await screen.findByText('feat: topic commit'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '체리픽' }))
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].url).toContain('/repositories/repo-1/cherry-pick')
+    expect(calls[0].body).toEqual({ revisions: ['abc1234567890abc1234'] })
+  })
+
+  it('reports a failed cherry-pick with a translated message', async () => {
+    stubHistoryAndPost([revision('abc1234567890abc1234', 'feat: topic commit')], 409)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderPanel()
+    fireEvent.contextMenu(await screen.findByText('feat: topic commit'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '체리픽' }))
+
+    expect(await screen.findByText(/체리픽하지 못했습니다/)).toBeInTheDocument()
   })
 
   it('asks for a repository when none is open', () => {

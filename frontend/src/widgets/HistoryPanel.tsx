@@ -1,6 +1,13 @@
-import {useMemo, useState, type FormEvent} from 'react'
+import {
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type FormEvent,
+    type MouseEvent as ReactMouseEvent,
+} from 'react'
 
-import {useHistory} from '@/entities/repository/api/repositories'
+import {useCherryPick, useHistory} from '@/entities/repository/api/repositories'
 import {computeCommitGraph, type RowGraph} from '@/entities/repository/lib/commitGraph'
 import {CommitDetail} from '@/widgets/CommitDetail'
 import type {
@@ -118,6 +125,7 @@ function CommitRow({
                        laneCount,
                        selected,
                        onSelect,
+                       onContextMenu,
                    }: {
     revision: Revision
     formatDate: (iso: string) => string
@@ -125,17 +133,20 @@ function CommitRow({
     laneCount: number
     selected: boolean
     onSelect: () => void
+    onContextMenu: (event: ReactMouseEvent) => void
 }) {
     return (
         <li
             role="option"
             tabIndex={0}
             aria-selected={selected}
+            aria-haspopup="menu"
             className={`flex cursor-pointer items-center gap-2 rounded px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
                 selected ? 'bg-elevated ring-1 ring-accent/50' : 'hover:bg-elevated'
             }`}
             style={{height: ROW_HEIGHT}}
             onClick={onSelect}
+            onContextMenu={onContextMenu}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
@@ -176,6 +187,58 @@ export function HistoryPanel() {
     const [selectedId, setSelectedId] = useState<string | null>(null)
 
     const history = useHistory(repositoryId, filters)
+    const cherryPick = useCherryPick()
+
+    // The commit a right-click opened the context menu on, and where to anchor it.
+    const [commitMenu, setCommitMenu] = useState<
+        { revisionId: string; x: number; y: number } | null
+    >(null)
+    const commitTriggerRef = useRef<HTMLElement | null>(null)
+    const commitMenuItemRef = useRef<HTMLButtonElement | null>(null)
+
+    function closeCommitMenu() {
+        setCommitMenu(null)
+        commitTriggerRef.current?.focus()
+        commitTriggerRef.current = null
+    }
+
+    useEffect(() => {
+        if (repositoryId == null && commitMenu != null) closeCommitMenu()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repositoryId, commitMenu])
+
+    useEffect(() => {
+        if (commitMenu == null) return
+        const close = () => closeCommitMenu()
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') close()
+        }
+        window.addEventListener('keydown', onKey)
+        window.addEventListener('scroll', close, true)
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            window.removeEventListener('scroll', close, true)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [commitMenu])
+
+    useEffect(() => {
+        if (commitMenu != null) commitMenuItemRef.current?.focus()
+    }, [commitMenu])
+
+    function openCommitMenu(revisionId: string, event: ReactMouseEvent) {
+        event.preventDefault()
+        commitTriggerRef.current = event.currentTarget as HTMLElement
+        setCommitMenu({revisionId, x: event.clientX, y: event.clientY})
+    }
+
+    function runCherryPick() {
+        if (commitMenu == null || repositoryId == null) return
+        const {revisionId} = commitMenu
+        if (!window.confirm(t('cherryPick.confirm'))) return
+        cherryPick.mutate({repositoryId, revisions: [revisionId]})
+        closeCommitMenu()
+    }
 
     const formatDate = useMemo(() => {
         const format = new Intl.DateTimeFormat(locale, {
@@ -275,9 +338,15 @@ export function HistoryPanel() {
                                         laneCount={graph.laneCount}
                                         selected={revision.id === selectedId}
                                         onSelect={() => setSelectedId(revision.id)}
+                                        onContextMenu={(event) => openCommitMenu(revision.id, event)}
                                     />
                                 ))}
                             </ul>
+                            {cherryPick.isError ? (
+                                <p className="px-2 py-1 text-xs text-vcs-deleted">
+                                    {t('cherryPick.failed')}: {t(apiErrorKey(cherryPick.error))}
+                                </p>
+                            ) : null}
                             {history.hasNextPage ? (
                                 <div className="flex justify-center p-2">
                                     <Button
@@ -307,6 +376,36 @@ export function HistoryPanel() {
                     )}
                 </aside>
             </div>
+
+            {commitMenu != null ? (
+                <>
+                    {/* A full-screen catcher closes the menu on any outside click. */}
+                    <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => closeCommitMenu()}
+                        onContextMenu={(event) => {
+                            event.preventDefault()
+                            closeCommitMenu()
+                        }}
+                    />
+                    <div
+                        role="menu"
+                        style={{top: commitMenu.y, left: commitMenu.x}}
+                        className="fixed z-50 min-w-max rounded-md border border-border bg-elevated py-1 text-[13px] shadow-lg"
+                    >
+                        <button
+                            ref={commitMenuItemRef}
+                            type="button"
+                            role="menuitem"
+                            disabled={cherryPick.isPending}
+                            onClick={runCherryPick}
+                            className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {t('cherryPick.action')}
+                        </button>
+                    </div>
+                </>
+            ) : null}
         </div>
     )
 }
