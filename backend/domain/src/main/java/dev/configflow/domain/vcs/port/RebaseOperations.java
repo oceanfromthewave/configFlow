@@ -1,22 +1,25 @@
 package dev.configflow.domain.vcs.port;
 
-import dev.configflow.domain.operation.OperationHandle;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 
 /**
  * Optional port for rebasing (Git-only; requires the {@code REBASE} capability).
+ *
+ * <p>Scoped to a plain {@code git rebase <upstream>}: JGit's {@code RebaseCommand}
+ * has no {@code --onto} equivalent, so that flag is deliberately absent.</p>
  */
-public interface RebaseOperations {
+public interface RebaseOperations
+{
 
-    /** Starts rebasing the current branch onto {@code upstream} (or {@code onto} if given). */
-    OperationHandle start(RepositoryHandle repo, String upstream, String onto);
+	/** Starts rebasing the current branch onto {@code upstream}. */
+	void start(RepositoryHandle repo, String upstream);
 
-    /** Continues a paused rebase after conflicts were resolved. */
-    OperationHandle continueRebase(RepositoryHandle repo);
+	/** Continues a paused rebase after conflicts were resolved. */
+	void continueRebase(RepositoryHandle repo);
 
-    /** Aborts the in-progress rebase and restores the pre-rebase state. */
-    OperationHandle abort(RepositoryHandle repo);
+	/** Aborts the in-progress rebase and restores the pre-rebase state. */
+	void abort(RepositoryHandle repo);
 
-    /** Skips the current commit and continues. */
-    OperationHandle skip(RepositoryHandle repo);
+	/** Skips the current commit and continues. */
+	void skip(RepositoryHandle repo);
 }
