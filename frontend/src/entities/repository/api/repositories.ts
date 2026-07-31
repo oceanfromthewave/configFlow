@@ -433,10 +433,15 @@ export function useCreateTag() {
 export function useDeleteTag() {
     const queryClient = useQueryClient()
     return useMutation({
-        mutationFn: ({repositoryId, name}: DeleteTagPayload) =>
-            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/tags/${name}`, {
+        mutationFn: ({repositoryId, name}: DeleteTagPayload) => {
+            // Slashes are preserved as path separators; everything else in the
+            // segment is encoded so a literal `%2F` in a tag name can't be
+            // decoded into a spurious separator server-side.
+            const encodedName = name.split('/').map(encodeURIComponent).join('/')
+            return apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/tags/${encodedName}`, {
                 method: 'DELETE',
-            }),
+            })
+        },
         onSuccess: () =>
             queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
     })
