@@ -317,4 +317,32 @@ describe('Sidebar', () => {
     expect(await screen.findAllByText('브랜치를 불러오지 못했습니다')).toHaveLength(3)
     expect(screen.getByText('파일 상태')).toBeInTheDocument()
   })
+
+  it('collapses and re-expands a branch folder', async () => {
+    stubRefs([
+      { kind: 'HEAD', name: 'main' },
+      { kind: 'BRANCH', name: 'main' },
+      { kind: 'BRANCH', name: 'feature/x' },
+      { kind: 'BRANCH', name: 'feature/y' },
+    ])
+
+    renderSidebar()
+    await screen.findByTitle('체크아웃: feature/x')
+
+    // The toggle's accessible name is "▸feature"/"▾feature" (chevron + label), so
+    // locate it by its label text instead of an exact accessible name.
+    const folderToggle = screen.getByText('feature', { exact: true }).closest('button')!
+    expect(folderToggle).toHaveAttribute('aria-expanded', 'true')
+
+    await userEvent.click(folderToggle)
+
+    expect(folderToggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTitle('체크아웃: feature/x')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('체크아웃: feature/y')).not.toBeInTheDocument()
+
+    await userEvent.click(folderToggle)
+
+    expect(folderToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByTitle('체크아웃: feature/x')).toBeInTheDocument()
+  })
 })
