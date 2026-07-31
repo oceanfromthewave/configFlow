@@ -6,6 +6,7 @@ import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
 import dev.configflow.application.repository.RepositoryService;
 import dev.configflow.application.stash.StashService;
+import dev.configflow.application.rebase.RebaseService;
 import dev.configflow.application.tag.TagService;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.OperationEvents;
@@ -114,6 +115,12 @@ public class OperationConfig
 	public TagService tagService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
 	{
 		return new TagService(vcsAccess, operationQueue, events);
+	}
+
+	@Bean
+	public RebaseService rebaseService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
+	{
+		return new RebaseService(vcsAccess, operationQueue, events);
 	}
 
 	@Bean

@@ -20,7 +20,7 @@ import org.eclipse.jgit.util.FS;
  */
 public final class GitVcsProvider
 		implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations, BranchOperations, RemoteSyncOperations,
-		RepositoryOperations, StashOperations, TagOperations
+		RepositoryOperations, StashOperations, TagOperations, RebaseOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -35,6 +35,7 @@ public final class GitVcsProvider
 	private final GitRemotes remotes;
 	private final GitStashes stashes;
 	private final GitTags tags;
+	private final GitRebase rebases;
 
 	public GitVcsProvider()
 	{
@@ -50,17 +51,17 @@ public final class GitVcsProvider
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access),
-				new GitStashes(access), new GitTags(access));
+				new GitStashes(access), new GitTags(access), new GitRebase(access));
 	}
 
 	private GitVcsProvider(GitRepositoryAccess access, RemoteCredentialResolver credentials)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access),
-				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access));
+				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access), new GitRebase(access));
 	}
 
 	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes, GitStashes stashes,
-			GitTags tags)
+			GitTags tags, GitRebase rebases)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
@@ -70,6 +71,7 @@ public final class GitVcsProvider
 		this.remotes = remotes;
 		this.stashes = stashes;
 		this.tags = tags;
+		this.rebases = rebases;
 	}
 
 	@Override
@@ -303,5 +305,29 @@ public final class GitVcsProvider
 	public void delete(RepositoryHandle repo, String name)
 	{
 		tags.delete(repo, name);
+	}
+
+	@Override
+	public void start(RepositoryHandle repo, String upstream)
+	{
+		rebases.start(repo, upstream);
+	}
+
+	@Override
+	public void continueRebase(RepositoryHandle repo)
+	{
+		rebases.continueRebase(repo);
+	}
+
+	@Override
+	public void abort(RepositoryHandle repo)
+	{
+		rebases.abort(repo);
+	}
+
+	@Override
+	public void skip(RepositoryHandle repo)
+	{
+		rebases.skip(repo);
 	}
 }
