@@ -20,7 +20,7 @@ import org.eclipse.jgit.util.FS;
  */
 public final class GitVcsProvider
 		implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations, BranchOperations, RemoteSyncOperations,
-		RepositoryOperations, StashOperations, TagOperations, RebaseOperations
+		RepositoryOperations, StashOperations, TagOperations, RebaseOperations, CherryPickOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -36,6 +36,7 @@ public final class GitVcsProvider
 	private final GitStashes stashes;
 	private final GitTags tags;
 	private final GitRebase rebases;
+	private final GitCherryPick cherryPicks;
 
 	public GitVcsProvider()
 	{
@@ -51,17 +52,17 @@ public final class GitVcsProvider
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access),
-				new GitStashes(access), new GitTags(access), new GitRebase(access));
+				new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access));
 	}
 
 	private GitVcsProvider(GitRepositoryAccess access, RemoteCredentialResolver credentials)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access),
-				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access), new GitRebase(access));
+				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access));
 	}
 
 	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes, GitStashes stashes,
-			GitTags tags, GitRebase rebases)
+			GitTags tags, GitRebase rebases, GitCherryPick cherryPicks)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
@@ -72,6 +73,7 @@ public final class GitVcsProvider
 		this.stashes = stashes;
 		this.tags = tags;
 		this.rebases = rebases;
+		this.cherryPicks = cherryPicks;
 	}
 
 	@Override
@@ -329,5 +331,11 @@ public final class GitVcsProvider
 	public void skip(RepositoryHandle repo)
 	{
 		rebases.skip(repo);
+	}
+
+	@Override
+	public void cherryPick(RepositoryHandle repo, List<RevisionId> revisions)
+	{
+		cherryPicks.cherryPick(repo, revisions);
 	}
 }

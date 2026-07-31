@@ -1,6 +1,7 @@
 package dev.configflow.config;
 
 import dev.configflow.application.branch.BranchService;
+import dev.configflow.application.cherrypick.CherryPickService;
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
@@ -121,6 +122,12 @@ public class OperationConfig
 	public RebaseService rebaseService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
 	{
 		return new RebaseService(vcsAccess, operationQueue, events);
+	}
+
+	@Bean
+	public CherryPickService cherryPickService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
+	{
+		return new CherryPickService(vcsAccess, operationQueue, events);
 	}
 
 	@Bean
