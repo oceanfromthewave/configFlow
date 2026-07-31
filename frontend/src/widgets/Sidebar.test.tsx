@@ -95,13 +95,15 @@ describe('Sidebar', () => {
     ])
 
     renderSidebar()
-    expect(await screen.findByText('feature/x')).toBeInTheDocument()
+    // "feature/x" folds under a "feature" folder, so its title (always the
+    // full ref name) is the reliable way to look it up, not visible text.
+    expect(await screen.findByTitle('체크아웃: feature/x')).toBeInTheDocument()
 
     expect(within(sectionOf('브랜치')).getByText('main')).toBeInTheDocument()
-    expect(within(sectionOf('원격')).getByText('origin/main')).toBeInTheDocument()
+    expect(within(sectionOf('원격')).getByTitle('origin/main')).toBeInTheDocument()
     expect(within(sectionOf('태그')).getByText('v1.0')).toBeInTheDocument()
     // A branch must not leak into the remote or tag lists.
-    expect(within(sectionOf('원격')).queryByText('feature/x')).not.toBeInTheDocument()
+    expect(within(sectionOf('원격')).queryByTitle('체크아웃: feature/x')).not.toBeInTheDocument()
   })
 
   it('marks the branch HEAD points at, and only that one', async () => {
@@ -114,7 +116,9 @@ describe('Sidebar', () => {
     renderSidebar()
     const current = await screen.findByLabelText('현재 브랜치')
 
-    expect(current.closest('[aria-current]')).toHaveTextContent('feature/x')
+    // "feature/x" folds under a "feature" folder, so the row's visible text is
+    // just "x" — its title still carries the full ref name.
+    expect(current.closest('[aria-current]')).toHaveAttribute('title', 'feature/x')
     expect(screen.getAllByLabelText('현재 브랜치')).toHaveLength(1)
   })
 
@@ -191,7 +195,7 @@ describe('Sidebar', () => {
     ])
 
     renderSidebar()
-    await screen.findByText('origin/main')
+    await screen.findByTitle('origin/main')
 
     // Checking out either detaches the head, which needs its own confirmation.
     expect(
