@@ -52,6 +52,11 @@ export function toSideBySideRows(hunk: DiffHunk): SideBySideRow[] {
             i++
         }
 
+        if (removed.length === 0 && added.length === 0) {
+            i++
+            continue
+        }
+
         const pairCount = Math.max(removed.length, added.length)
         for (let j = 0; j < pairCount; j++) {
             const oldText = j < removed.length ? removed[j] : null
