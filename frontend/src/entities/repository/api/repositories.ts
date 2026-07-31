@@ -391,6 +391,57 @@ export function useRefs(repositoryId: string | null) {
     })
 }
 
+export interface CreateTagPayload {
+    repositoryId: string
+    name: string
+    target?: string
+    message?: string
+}
+
+export interface DeleteTagPayload {
+    repositoryId: string
+    name: string
+}
+
+/**
+ * Creates a tag, optionally on a specific revision (defaults to HEAD) and
+ * optionally annotated (a non-empty message makes it annotated).
+ *
+ * Like checkout and merge, this answers as soon as the work is queued; the
+ * refreshed refs arrive later over SSE — tags are part of the same `refs`
+ * query as branches, so no extra invalidation wiring is needed here.
+ */
+export function useCreateTag() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, name, target, message}: CreateTagPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/tags`, {
+                method: 'POST',
+                body: {name, target, message},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
+/**
+ * Deletes a tag.
+ *
+ * The name is sent as-is in the path (tag names may contain slashes, e.g.
+ * `release/1.0`), matching the backend's `{*name}` wildcard.
+ */
+export function useDeleteTag() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, name}: DeleteTagPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/tags/${name}`, {
+                method: 'DELETE',
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
 interface PathsPayload {
     repositoryId: string
     paths: string[]

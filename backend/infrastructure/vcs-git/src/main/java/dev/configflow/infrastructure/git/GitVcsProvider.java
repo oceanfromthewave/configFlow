@@ -3,16 +3,7 @@ package dev.configflow.infrastructure.git;
 import dev.configflow.domain.credential.RemoteCredentialResolver;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.model.*;
-import dev.configflow.domain.vcs.port.BranchOperations;
-import dev.configflow.domain.vcs.port.CommitOperations;
-import dev.configflow.domain.vcs.port.DiffOperations;
-import dev.configflow.domain.vcs.port.OperationMonitor;
-import dev.configflow.domain.vcs.port.RefBrowseOperations;
-import dev.configflow.domain.vcs.port.RemoteSyncOperations;
-import dev.configflow.domain.vcs.port.RepositoryOperations;
-import dev.configflow.domain.vcs.port.StashOperations;
-import dev.configflow.domain.vcs.port.VcsProvider;
-import dev.configflow.domain.vcs.port.WorkingTreeOperations;
+import dev.configflow.domain.vcs.port.*;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -29,7 +20,7 @@ import org.eclipse.jgit.util.FS;
  */
 public final class GitVcsProvider
 		implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations, BranchOperations, RemoteSyncOperations,
-		RepositoryOperations, StashOperations
+		RepositoryOperations, StashOperations, TagOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -43,6 +34,7 @@ public final class GitVcsProvider
 	private final GitBranches branches;
 	private final GitRemotes remotes;
 	private final GitStashes stashes;
+	private final GitTags tags;
 
 	public GitVcsProvider()
 	{
@@ -57,16 +49,18 @@ public final class GitVcsProvider
 
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
-		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access), new GitStashes(access));
+		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access),
+				new GitStashes(access), new GitTags(access));
 	}
 
 	private GitVcsProvider(GitRepositoryAccess access, RemoteCredentialResolver credentials)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access),
-				new GitRemotes(access, credentials), new GitStashes(access));
+				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access));
 	}
 
-	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes, GitStashes stashes)
+	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes, GitStashes stashes,
+			GitTags tags)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
@@ -75,6 +69,7 @@ public final class GitVcsProvider
 		this.branches = branches;
 		this.remotes = remotes;
 		this.stashes = stashes;
+		this.tags = tags;
 	}
 
 	@Override
@@ -296,5 +291,17 @@ public final class GitVcsProvider
 	public void drop(RepositoryHandle repo, int index)
 	{
 		stashes.drop(repo, index);
+	}
+
+	@Override
+	public void create(RepositoryHandle repo, String name, RevisionId target, String message)
+	{
+		tags.create(repo, name, target, message);
+	}
+
+	@Override
+	public void delete(RepositoryHandle repo, String name)
+	{
+		tags.delete(repo, name);
 	}
 }
