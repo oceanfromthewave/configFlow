@@ -320,6 +320,11 @@ function RefItem({
         return (
             <div
                 title={name}
+                // The visible label may be truncated to a tree leaf's last segment, so
+                // the accessible name still needs the full ref name explicitly — an
+                // aria-label here also stops it from falling back to the dot's own
+                // "current branch" label when `current` is true.
+                aria-label={current ? `${currentLabel}: ${name}` : name}
                 aria-current={current}
                 onContextMenu={onContextMenu}
                 {...menuProps}
