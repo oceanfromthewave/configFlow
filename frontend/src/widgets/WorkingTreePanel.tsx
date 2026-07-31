@@ -1,6 +1,9 @@
 import type {ReactNode} from 'react'
 
 import {
+    useAbortRebase,
+    useContinueRebase,
+    useSkipRebase,
     useStageFiles,
     useUnstageFiles,
     useWorkingTreeStatus,
@@ -142,6 +145,9 @@ export function WorkingTreePanel() {
     const status = useWorkingTreeStatus(repositoryId)
     const stageFiles = useStageFiles()
     const unstageFiles = useUnstageFiles()
+    const continueRebase = useContinueRebase()
+    const abortRebase = useAbortRebase()
+    const skipRebase = useSkipRebase()
 
     // The query is disabled without a repository, so it would stay `isPending`
     // forever and render a spinner that never resolves.
@@ -169,10 +175,12 @@ export function WorkingTreePanel() {
         )
     }
 
-    const {staged, unstaged, conflicted} = status.data
+    const {staged, unstaged, conflicted, rebasing} = status.data
     const total = staged.length + unstaged.length + conflicted.length
 
-    if (total === 0) {
+    // A rebase stopped with nothing left to show (already staged and ready for
+    // continue) still needs the banner, so the clean state only applies without one.
+    if (total === 0 && !rebasing) {
         return (
             <EmptyState
                 title={t('workingTree.cleanTitle')}
@@ -180,6 +188,9 @@ export function WorkingTreePanel() {
             />
         )
     }
+
+    const rebaseBusy = continueRebase.isPending || abortRebase.isPending || skipRebase.isPending
+    const rebaseFailure = continueRebase.error ?? abortRebase.error ?? skipRebase.error
 
     // One request may still be in flight; a second click would race it.
     const busy = stageFiles.isPending || unstageFiles.isPending
@@ -260,6 +271,46 @@ export function WorkingTreePanel() {
 
     return (
         <div className="flex h-full flex-col gap-3 overflow-y-auto p-2">
+            {rebasing ? (
+                <div className="flex flex-col gap-2 rounded border border-vcs-conflicted/40 bg-vcs-conflicted/10 p-2">
+                    <p className="text-xs font-medium text-vcs-conflicted">{t('rebase.inProgress')}</p>
+                    {rebaseFailure ? (
+                        <p className="text-xs text-vcs-deleted">
+                            {t('rebase.failed')}: {t(apiErrorKey(rebaseFailure))}
+                        </p>
+                    ) : null}
+                    <div className="flex gap-1.5">
+                        <Button
+                            size="sm"
+                            disabled={rebaseBusy}
+                            onClick={() => continueRebase.mutate({repositoryId})}
+                        >
+                            {t('rebase.continue')}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={rebaseBusy}
+                            onClick={() => {
+                                if (window.confirm(t('rebase.skipConfirm'))) skipRebase.mutate({repositoryId})
+                            }}
+                        >
+                            {t('rebase.skip')}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={rebaseBusy}
+                            onClick={() => {
+                                if (window.confirm(t('rebase.abortConfirm'))) abortRebase.mutate({repositoryId})
+                            }}
+                        >
+                            {t('rebase.abort')}
+                        </Button>
+                    </div>
+                </div>
+            ) : null}
+
             {failure ? (
                 <p className="px-2 text-xs text-vcs-deleted">
                     {t('workingTree.actionFailed')}: {t(apiErrorKey(failure))}

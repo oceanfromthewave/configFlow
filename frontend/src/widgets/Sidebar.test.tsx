@@ -236,8 +236,10 @@ describe('Sidebar', () => {
     fireEvent.contextMenu(
       await screen.findByRole('button', { name: '체크아웃: feature/x' }),
     )
+    // The context menu also has a "rebase onto feature/x" item now, so match the
+    // merge wording specifically rather than just the branch name.
     await userEvent.click(
-      await screen.findByRole('menuitem', { name: /feature\/x/ }),
+      await screen.findByRole('menuitem', { name: /병합/ }),
     )
 
     await waitFor(() => expect(calls).toHaveLength(1))
@@ -277,8 +279,10 @@ describe('Sidebar', () => {
     fireEvent.contextMenu(
       await screen.findByRole('button', { name: '체크아웃: feature/x' }),
     )
+    // The context menu also has a "rebase onto feature/x" item now, so match the
+    // merge wording specifically rather than just the branch name.
     await userEvent.click(
-      await screen.findByRole('menuitem', { name: /feature\/x/ }),
+      await screen.findByRole('menuitem', { name: /병합/ }),
     )
 
     expect(await screen.findByText(/병합하지 못했습니다/)).toBeInTheDocument()
