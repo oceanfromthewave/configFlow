@@ -4,6 +4,8 @@ import {useCommitFileDiff, useFileDiff} from '@/entities/repository/api/reposito
 import type {DiffHunk} from '@/entities/repository/model/types'
 import {toSideBySideRows} from '@/entities/repository/lib/sideBySideDiff'
 import type {SideBySideRowKind} from '@/entities/repository/lib/sideBySideDiff'
+import {wordDiff} from '@/entities/repository/lib/wordDiff'
+import type {WordToken} from '@/entities/repository/lib/wordDiff'
 import {useT} from '@/shared/i18n'
 import {apiErrorKey} from '@/shared/lib/apiErrorMessage'
 import {cn} from '@/shared/lib/cn'
@@ -75,6 +77,21 @@ const NEW_CLASS: Record<SideBySideRowKind, string> = {
     empty: 'bg-elevated/40',
 }
 
+/** Renders tokens plainly, wrapping only the ones the word diff marked changed. */
+function WordDiffText({tokens, changedClass}: {tokens: WordToken[]; changedClass: string}) {
+    return (
+        <>
+            {tokens.map((token, index) =>
+                token.changed ? (
+                    <span key={index} className={changedClass}>{token.text}</span>
+                ) : (
+                    token.text
+                ),
+            )}
+        </>
+    )
+}
+
 /** Same hunk as {@link Hunk}, but old and new lines sit in their own columns. */
 function SideBySideHunk({hunk}: {hunk: DiffHunk}) {
     const rows = toSideBySideRows(hunk)
@@ -86,25 +103,32 @@ function SideBySideHunk({hunk}: {hunk: DiffHunk}) {
                     @@ -{hunk.oldStart},{hunk.oldCount} +{hunk.newStart},{hunk.newCount} @@
                 </td>
             </tr>
-            {rows.map((row, index) => (
-                <tr key={`${hunk.newStart}:${index}`}>
-                    <td className="w-10 select-none px-1 text-right align-top font-mono text-[11px] opacity-60">
-                        {row.oldNumber}
-                    </td>
-                    <td className={cn(
-                        'w-1/2 whitespace-pre border-r border-border px-2 font-mono text-xs',
-                        OLD_CLASS[row.oldKind],
-                    )}>
-                        {row.oldText}
-                    </td>
-                    <td className="w-10 select-none px-1 text-right align-top font-mono text-[11px] opacity-60">
-                        {row.newNumber}
-                    </td>
-                    <td className={cn('w-1/2 whitespace-pre px-2 font-mono text-xs', NEW_CLASS[row.newKind])}>
-                        {row.newText}
-                    </td>
-                </tr>
-            ))}
+            {rows.map((row, index) => {
+                // Only a replaced line pair (both sides present) gets a word diff —
+                // pure adds/deletes are already fully highlighted by row color.
+                const paired = row.oldKind === 'changed' && row.newKind === 'changed'
+                const words = paired ? wordDiff(row.oldText as string, row.newText as string) : null
+
+                return (
+                    <tr key={`${hunk.newStart}:${index}`}>
+                        <td className="w-10 select-none px-1 text-right align-top font-mono text-[11px] opacity-60">
+                            {row.oldNumber}
+                        </td>
+                        <td className={cn(
+                            'w-1/2 whitespace-pre border-r border-border px-2 font-mono text-xs',
+                            OLD_CLASS[row.oldKind],
+                        )}>
+                            {words ? <WordDiffText tokens={words.old} changedClass="bg-vcs-deleted/40"/> : row.oldText}
+                        </td>
+                        <td className="w-10 select-none px-1 text-right align-top font-mono text-[11px] opacity-60">
+                            {row.newNumber}
+                        </td>
+                        <td className={cn('w-1/2 whitespace-pre px-2 font-mono text-xs', NEW_CLASS[row.newKind])}>
+                            {words ? <WordDiffText tokens={words.new} changedClass="bg-vcs-added/40"/> : row.newText}
+                        </td>
+                    </tr>
+                )
+            })}
         </>
     )
 }
