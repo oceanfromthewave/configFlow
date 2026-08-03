@@ -138,6 +138,29 @@ class GitConflictsTest {
     }
 
     @Test
+    void resolveManualRecreatesAParentDirectoryDeletedByTheMineSide() throws Exception {
+        // If "mine" deleted the last file in a directory, the directory itself is gone
+        // from the working tree; a manual resolution writing back into it must not 500.
+        Files.createDirectories(repoDir.resolve("sub"));
+        commitFile("sub/nested.txt", "base\n");
+        branches.createBranch(handle, "feature/x", null, true);
+        commitFile("sub/nested.txt", "edited on feature\n");
+        branches.checkout(handle, mainBranch);
+        Files.delete(repoDir.resolve("sub/nested.txt"));
+        Files.delete(repoDir.resolve("sub"));
+        workingTree.stage(handle, List.of(Path.of("sub/nested.txt")));
+        commits.commit(handle, CommitRequest.of("delete sub/nested.txt"));
+
+        assertThrows(MergeConflictException.class,
+                () -> branches.merge(handle, new MergeRequest("feature/x", false, false)));
+
+        conflicts.resolve(handle, Path.of("sub/nested.txt"), ConflictedFile.Resolution.MANUAL, "merged by hand\n");
+
+        assertEquals("merged by hand\n", Files.readString(repoDir.resolve("sub/nested.txt")));
+        assertTrue(conflicts.listConflicts(handle).isEmpty());
+    }
+
+    @Test
     void resolveRejectsUnresolvedAsAnExplicitChoice() throws Exception {
         createModifyModifyConflict();
 

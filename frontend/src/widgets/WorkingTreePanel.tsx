@@ -1,4 +1,4 @@
-import {useEffect, useState, type ReactNode} from 'react'
+import {useEffect, useRef, useState, type ReactNode} from 'react'
 
 import {
     useAbortRebase,
@@ -138,11 +138,16 @@ function MergeEditor({
     const content = useConflictContent(repositoryId, path)
     const resolve = useResolveConflict()
     const [manualText, setManualText] = useState('')
+    // Tracks which path the draft was last seeded for, so a background refetch of
+    // the same conflict (focus regain, invalidation) never clobbers what the user
+    // is typing — only switching to a different conflict reseeds the draft.
+    const seededPath = useRef<string | null>(null)
 
-    // Reseed the draft whenever the target conflict (or its loaded content) changes,
-    // so switching files never leaves the previous file's edits behind.
     useEffect(() => {
-        setManualText(content.data?.mine ?? content.data?.theirs ?? '')
+        if (seededPath.current === path) return
+        if (content.data == null) return
+        seededPath.current = path
+        setManualText(content.data.mine ?? content.data.theirs ?? '')
     }, [path, content.data])
 
     useEffect(() => {
@@ -212,10 +217,14 @@ function MergeEditor({
                         </div>
 
                         <div className="flex min-h-0 flex-1 flex-col gap-1">
-                            <label className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                            <label
+                                htmlFor="merge-editor-manual-text"
+                                className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted"
+                            >
                                 {t('mergeEditor.manualLabel')}
                             </label>
                             <textarea
+                                id="merge-editor-manual-text"
                                 value={manualText}
                                 onChange={(event) => setManualText(event.target.value)}
                                 spellCheck={false}
