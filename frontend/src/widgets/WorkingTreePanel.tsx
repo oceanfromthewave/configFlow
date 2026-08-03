@@ -1,8 +1,10 @@
-import type {ReactNode} from 'react'
+import {useEffect, useState, type ReactNode} from 'react'
 
 import {
     useAbortRebase,
+    useConflictContent,
     useContinueRebase,
+    useResolveConflict,
     useSkipRebase,
     useStageFiles,
     useUnstageFiles,
@@ -104,6 +106,144 @@ function FileRow({
     )
 }
 
+/** One read-only side of a 3-way conflict. */
+function MergeSide({label, content}: { label: string; content: string | null }) {
+    const t = useT()
+    return (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
+            <h4 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                {label}
+            </h4>
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded border border-border bg-elevated p-2 font-mono text-xs text-primary">
+                {content ?? t('mergeEditor.noContent')}
+            </pre>
+        </div>
+    )
+}
+
+/**
+ * Modal-like overlay for resolving one conflicted file: the three sides side by
+ * side, plus a manual-merge textarea for when neither side alone is right.
+ */
+function MergeEditor({
+                          repositoryId,
+                          path,
+                          onClose,
+                      }: {
+    repositoryId: string
+    path: string
+    onClose: () => void
+}) {
+    const t = useT()
+    const content = useConflictContent(repositoryId, path)
+    const resolve = useResolveConflict()
+    const [manualText, setManualText] = useState('')
+
+    // Reseed the draft whenever the target conflict (or its loaded content) changes,
+    // so switching files never leaves the previous file's edits behind.
+    useEffect(() => {
+        setManualText(content.data?.mine ?? content.data?.theirs ?? '')
+    }, [path, content.data])
+
+    useEffect(() => {
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') onClose()
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [onClose])
+
+    function resolveWith(resolution: 'MINE' | 'THEIRS') {
+        resolve.mutate(
+            {repositoryId, path, resolution},
+            {onSuccess: onClose},
+        )
+    }
+
+    function resolveManual() {
+        resolve.mutate(
+            {repositoryId, path, resolution: 'MANUAL', content: manualText},
+            {onSuccess: onClose},
+        )
+    }
+
+    return (
+        <>
+            <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose}/>
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('mergeEditor.title', {path})}
+                className="fixed inset-8 z-50 flex flex-col gap-3 rounded-lg border border-border bg-elevated p-4 shadow-lg"
+            >
+                <div className="flex shrink-0 items-center justify-between gap-2">
+                    <h3 className="min-w-0 truncate text-sm font-semibold text-primary">
+                        {t('mergeEditor.title', {path})}
+                    </h3>
+                    <Button size="sm" variant="ghost" onClick={onClose}>
+                        {t('mergeEditor.close')}
+                    </Button>
+                </div>
+
+                {content.isPending ? (
+                    <div className="flex items-center gap-2 text-sm text-muted">
+                        <Spinner/>
+                        {t('mergeEditor.loading')}
+                    </div>
+                ) : content.isError ? (
+                    <p className="text-sm text-vcs-deleted">
+                        {t('mergeEditor.loadFailed')}: {t(apiErrorKey(content.error))}
+                    </p>
+                ) : (
+                    <>
+                        <div className="flex min-h-0 flex-[2] gap-3">
+                            <MergeSide label={t('mergeEditor.base')} content={content.data.base}/>
+                            <MergeSide label={t('mergeEditor.mine')} content={content.data.mine}/>
+                            <MergeSide label={t('mergeEditor.theirs')} content={content.data.theirs}/>
+                        </div>
+
+                        <div className="flex shrink-0 gap-1.5">
+                            <Button size="sm" disabled={resolve.isPending} onClick={() => resolveWith('MINE')}>
+                                {t('mergeEditor.useMine')}
+                            </Button>
+                            <Button size="sm" disabled={resolve.isPending} onClick={() => resolveWith('THEIRS')}>
+                                {t('mergeEditor.useTheirs')}
+                            </Button>
+                        </div>
+
+                        <div className="flex min-h-0 flex-1 flex-col gap-1">
+                            <label className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                                {t('mergeEditor.manualLabel')}
+                            </label>
+                            <textarea
+                                value={manualText}
+                                onChange={(event) => setManualText(event.target.value)}
+                                spellCheck={false}
+                                className="min-h-0 flex-1 resize-none rounded border border-border bg-elevated p-2 font-mono text-xs text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                            />
+                            <Button
+                                size="sm"
+                                variant="primary"
+                                className="self-start"
+                                disabled={resolve.isPending}
+                                onClick={resolveManual}
+                            >
+                                {t('mergeEditor.resolveManual')}
+                            </Button>
+                        </div>
+
+                        {resolve.isError ? (
+                            <p className="shrink-0 text-xs text-vcs-deleted">
+                                {t('mergeEditor.resolveFailed')}: {t(apiErrorKey(resolve.error))}
+                            </p>
+                        ) : null}
+                    </>
+                )}
+            </div>
+        </>
+    )
+}
+
 function Section({
                      title,
                      count,
@@ -148,6 +288,13 @@ export function WorkingTreePanel() {
     const continueRebase = useContinueRebase()
     const abortRebase = useAbortRebase()
     const skipRebase = useSkipRebase()
+    const [mergeEditorPath, setMergeEditorPath] = useState<string | null>(null)
+
+    // Switching repositories must drop any open editor: its path belongs to the
+    // previous repository's conflict set.
+    useEffect(() => {
+        setMergeEditorPath(null)
+    }, [repositoryId])
 
     // The query is disabled without a repository, so it would stay `isPending`
     // forever and render a spinner that never resolves.
@@ -263,8 +410,8 @@ export function WorkingTreePanel() {
             letter="!"
             variant="conflicted"
             hint={t(RESOLUTION_KEY[file.resolution])}
-            selected={isSelected(file.path, false)}
-            onSelect={() => selectFile({kind: 'working', path: file.path, staged: false})}
+            selected={mergeEditorPath === file.path}
+            onSelect={() => setMergeEditorPath(file.path)}
             action={stageAction(file.path)}
         />
     )
@@ -352,6 +499,14 @@ export function WorkingTreePanel() {
             >
                 {unstaged.map(renderUnstaged)}
             </Section>
+
+            {mergeEditorPath != null ? (
+                <MergeEditor
+                    repositoryId={repositoryId}
+                    path={mergeEditorPath}
+                    onClose={() => setMergeEditorPath(null)}
+                />
+            ) : null}
         </div>
     )
 }

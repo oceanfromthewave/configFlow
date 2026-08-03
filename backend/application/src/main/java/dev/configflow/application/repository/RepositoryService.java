@@ -215,6 +215,26 @@ public final class RepositoryService
 		return opened.operations().listRefs(opened.handle());
 	}
 
+	public List<ConflictedFile> listConflicts(RepositoryId id)
+	{
+		VcsAccess.Opened<ConflictOperations> opened = access.open(id, ConflictOperations.class);
+		return opened.operations().listConflicts(opened.handle());
+	}
+
+	public ThreeWayContent threeWayContent(RepositoryId id, Path path)
+	{
+		Path safePath = requirePath(path);
+		VcsAccess.Opened<ConflictOperations> opened = access.open(id, ConflictOperations.class);
+		return opened.operations().threeWayContent(opened.handle(), safePath);
+	}
+
+	public void resolve(RepositoryId id, Path path, ConflictedFile.Resolution resolution, String manualContent)
+	{
+		Path safePath = requirePath(path);
+		VcsAccess.Opened<ConflictOperations> opened = access.open(id, ConflictOperations.class);
+		opened.operations().resolve(opened.handle(), safePath, resolution, manualContent);
+	}
+
 	/**
 	 * Revisions reachable from {@code target} but not from {@code base}.
 	 *

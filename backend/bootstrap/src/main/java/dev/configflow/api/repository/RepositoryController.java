@@ -323,7 +323,7 @@ public class RepositoryController
 	 * <p>Declared optional on purpose: a missing required parameter makes Spring fail
 	 * before the method runs, which would surface as a 500 instead of a 400.</p>
 	 */
-	private static Path toPath(String path)
+	static Path toPath(String path)
 	{
 		String trimmed = trimmed(path);
 		if(trimmed == null)

@@ -20,7 +20,7 @@ import org.eclipse.jgit.util.FS;
  */
 public final class GitVcsProvider
 		implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations, BranchOperations, RemoteSyncOperations,
-		RepositoryOperations, StashOperations, TagOperations, RebaseOperations, CherryPickOperations, RevertOperations, ResetOperations
+		RepositoryOperations, StashOperations, TagOperations, RebaseOperations, CherryPickOperations, RevertOperations, ResetOperations, ConflictOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
@@ -39,6 +39,7 @@ public final class GitVcsProvider
 	private final GitCherryPick cherryPicks;
 	private final GitRevert reverts;
 	private final GitReset resets;
+	private final GitConflicts conflicts;
 
 	public GitVcsProvider()
 	{
@@ -54,18 +55,19 @@ public final class GitVcsProvider
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access),
-				new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access), new GitRevert(access), new GitReset(access));
+				new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access), new GitRevert(access), new GitReset(access),
+				new GitConflicts(access));
 	}
 
 	private GitVcsProvider(GitRepositoryAccess access, RemoteCredentialResolver credentials)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access),
 				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access),
-				new GitRevert(access), new GitReset(access));
+				new GitRevert(access), new GitReset(access), new GitConflicts(access));
 	}
 
 	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes, GitStashes stashes,
-			GitTags tags, GitRebase rebases, GitCherryPick cherryPicks, GitRevert reverts, GitReset resets)
+			GitTags tags, GitRebase rebases, GitCherryPick cherryPicks, GitRevert reverts, GitReset resets, GitConflicts conflicts)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
@@ -79,6 +81,7 @@ public final class GitVcsProvider
 		this.cherryPicks = cherryPicks;
 		this.reverts = reverts;
 		this.resets = resets;
+		this.conflicts = conflicts;
 	}
 
 	@Override
@@ -354,5 +357,23 @@ public final class GitVcsProvider
 	public void reset(RepositoryHandle repo, RevisionId target, ResetMode mode)
 	{
 		resets.reset(repo, target, mode);
+	}
+
+	@Override
+	public List<ConflictedFile> listConflicts(RepositoryHandle repo)
+	{
+		return conflicts.listConflicts(repo);
+	}
+
+	@Override
+	public ThreeWayContent threeWayContent(RepositoryHandle repo, Path path)
+	{
+		return conflicts.threeWayContent(repo, path);
+	}
+
+	@Override
+	public void resolve(RepositoryHandle repo, Path path, ConflictedFile.Resolution resolution, String manualContent)
+	{
+		conflicts.resolve(repo, path, resolution, manualContent);
 	}
 }
