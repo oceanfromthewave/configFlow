@@ -20,11 +20,11 @@ import org.eclipse.jgit.util.FS;
  */
 public final class GitVcsProvider
 		implements VcsProvider, WorkingTreeOperations, CommitOperations, DiffOperations, RefBrowseOperations, BranchOperations, RemoteSyncOperations,
-		RepositoryOperations, StashOperations, TagOperations, RebaseOperations, CherryPickOperations, RevertOperations
+		RepositoryOperations, StashOperations, TagOperations, RebaseOperations, CherryPickOperations, RevertOperations, ResetOperations
 {
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.STAGING, VcsCapability.STASH, VcsCapability.REBASE, VcsCapability.TAG,
-			VcsCapability.CHERRY_PICK, VcsCapability.AMEND, VcsCapability.MERGE, VcsCapability.HISTORY_GRAPH);
+			VcsCapability.CHERRY_PICK, VcsCapability.AMEND, VcsCapability.MERGE, VcsCapability.HISTORY_GRAPH, VcsCapability.RESET);
 
 	private final GitWorkingTree workingTree;
 	private final GitCommits commits;
@@ -38,6 +38,7 @@ public final class GitVcsProvider
 	private final GitRebase rebases;
 	private final GitCherryPick cherryPicks;
 	private final GitRevert reverts;
+	private final GitReset resets;
 
 	public GitVcsProvider()
 	{
@@ -53,18 +54,18 @@ public final class GitVcsProvider
 	private GitVcsProvider(GitRepositoryAccess access)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access), new GitRemotes(access),
-				new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access), new GitRevert(access));
+				new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access), new GitRevert(access), new GitReset(access));
 	}
 
 	private GitVcsProvider(GitRepositoryAccess access, RemoteCredentialResolver credentials)
 	{
 		this(new GitWorkingTree(access), new GitCommits(access), new GitDiff(access), new GitRefs(access), new GitBranches(access),
 				new GitRemotes(access, credentials), new GitStashes(access), new GitTags(access), new GitRebase(access), new GitCherryPick(access),
-				new GitRevert(access));
+				new GitRevert(access), new GitReset(access));
 	}
 
 	GitVcsProvider(GitWorkingTree workingTree, GitCommits commits, GitDiff diffs, GitRefs refs, GitBranches branches, GitRemotes remotes, GitStashes stashes,
-			GitTags tags, GitRebase rebases, GitCherryPick cherryPicks, GitRevert reverts)
+			GitTags tags, GitRebase rebases, GitCherryPick cherryPicks, GitRevert reverts, GitReset resets)
 	{
 		this.workingTree = workingTree;
 		this.commits = commits;
@@ -77,6 +78,7 @@ public final class GitVcsProvider
 		this.rebases = rebases;
 		this.cherryPicks = cherryPicks;
 		this.reverts = reverts;
+		this.resets = resets;
 	}
 
 	@Override
@@ -346,5 +348,11 @@ public final class GitVcsProvider
 	public void revert(RepositoryHandle repo, List<RevisionId> revisions)
 	{
 		reverts.revert(repo, revisions);
+	}
+
+	@Override
+	public void reset(RepositoryHandle repo, RevisionId target, ResetMode mode)
+	{
+		resets.reset(repo, target, mode);
 	}
 }
