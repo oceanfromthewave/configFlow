@@ -4,10 +4,12 @@ import dev.configflow.application.credential.CredentialService;
 import dev.configflow.application.settings.SettingsService;
 import dev.configflow.domain.credential.CredentialRefStore;
 import dev.configflow.domain.credential.CredentialStore;
+import dev.configflow.domain.credential.SshKeyFactory;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.settings.SettingsStore;
 import dev.configflow.infrastructure.credential.InMemoryCredentialStore;
+import dev.configflow.infrastructure.credential.SshdSshKeyFactory;
 import dev.configflow.infrastructure.credential.WindowsCredentialStore;
 import dev.configflow.infrastructure.persistence.SqliteCredentialRefStore;
 import dev.configflow.infrastructure.persistence.SqliteDatabase;
@@ -86,9 +88,17 @@ public class PersistenceConfig
 		return new InMemoryCredentialStore();
 	}
 
+	/** Ed25519 key generation. Platform-independent, unlike the store the keys end up in. */
 	@Bean
-	public CredentialService credentialService(CredentialStore credentialStore, CredentialRefStore credentialRefStore, Clock clock)
+	public SshKeyFactory sshKeyFactory()
 	{
-		return new CredentialService(credentialStore, credentialRefStore, clock);
+		return new SshdSshKeyFactory();
+	}
+
+	@Bean
+	public CredentialService credentialService(CredentialStore credentialStore, CredentialRefStore credentialRefStore, SshKeyFactory sshKeyFactory,
+			Clock clock)
+	{
+		return new CredentialService(credentialStore, credentialRefStore, sshKeyFactory, clock);
 	}
 }

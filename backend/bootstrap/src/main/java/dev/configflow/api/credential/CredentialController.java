@@ -29,12 +29,22 @@ public class CredentialController
 	{
 	}
 
-	/** A credential as the client sees it: everything identifying, nothing secret. */
-	public record CredentialResponse(String id, String host, String protocol, String username, Instant createdAt)
+	/** POST body for generating an SSH key. Only {@code host} is required. */
+	public record CreateSshKeyRequest(String host, String username, String comment)
+	{
+	}
+
+	/**
+	 * A credential as the client sees it: everything identifying, nothing secret.
+	 *
+	 * <p>{@code publicKey} is the exception that proves the rule — it is the half of an
+	 * SSH key meant to be handed out, and the user needs it to register the key with their server. {@code null} for password and token credentials.</p>
+	 */
+	public record CredentialResponse(String id, String host, String protocol, String username, String publicKey, Instant createdAt)
 	{
 		static CredentialResponse from(CredentialRef ref)
 		{
-			return new CredentialResponse(ref.id().asString(), ref.host(), ref.protocol(), ref.username(), ref.createdAt());
+			return new CredentialResponse(ref.id().asString(), ref.host(), ref.protocol(), ref.username(), ref.publicKey(), ref.createdAt());
 		}
 	}
 
@@ -62,6 +72,22 @@ public class CredentialController
 		}
 		CredentialRef saved = credentialService.save(request.host(), request.protocol(), request.username(), request.secret().toCharArray());
 		return CredentialResponse.from(saved);
+	}
+
+	/**
+	 * Generates an SSH key for a host and returns its public half.
+	 *
+	 * <p>Unlike {@link #save}, nothing secret travels inbound either: the private key is
+	 * created here and goes straight to the OS store without ever leaving the backend.</p>
+	 */
+	@PostMapping("/ssh-keys")
+	public CredentialResponse createSshKey(@RequestBody CreateSshKeyRequest request)
+	{
+		if(request == null)
+		{
+			throw new IllegalArgumentException("Request body must contain a 'host' field");
+		}
+		return CredentialResponse.from(credentialService.createSshKey(request.host(), request.username(), request.comment()));
 	}
 
 	@DeleteMapping("/{id}")

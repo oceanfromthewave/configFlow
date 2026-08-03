@@ -11,6 +11,8 @@ import dev.configflow.domain.credential.CredentialId;
 import dev.configflow.domain.credential.CredentialRef;
 import dev.configflow.domain.credential.CredentialRefStore;
 import dev.configflow.domain.credential.CredentialStore;
+import dev.configflow.domain.credential.SshKeyFactory;
+import dev.configflow.domain.credential.SshKeyPair;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -36,8 +38,9 @@ class CredentialServiceTest {
     private final List<String> events = new ArrayList<>();
     private final FakeCredentialStore secrets = new FakeCredentialStore(events);
     private final FakeCredentialRefStore refs = new FakeCredentialRefStore(events);
+    private final FakeSshKeyFactory keys = new FakeSshKeyFactory();
     private final CredentialService service =
-            new CredentialService(secrets, refs, Clock.fixed(NOW, ZoneOffset.UTC));
+            new CredentialService(secrets, refs, keys, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     void saveStoresTheSecretBeforeTheRow() {
@@ -157,6 +160,38 @@ class CredentialServiceTest {
         assertEquals(2, service.list().size());
     }
 
+    // --- createSshKey -----------------------------------------------------
+
+    @Test
+    void createSshKeyStoresThePrivateHalfAndReturnsThePublicHalf() {
+        CredentialRef saved = service.createSshKey("github.com", "git", "git@laptop");
+
+        assertEquals("ssh", saved.protocol());
+        assertEquals("ssh-ed25519 AAAA... git@laptop", saved.publicKey());
+        assertArrayEquals("private-pem".toCharArray(),
+                secrets.secrets.get(saved.storeKey()).secret());
+    }
+
+    @Test
+    void createSshKeyWipesTheGeneratedPrivateKey() {
+        service.createSshKey("github.com", "git", "git@laptop");
+
+        // The service's own copy must be blanked once the OS store has its own — the
+        // same rule save() follows for a caller-supplied secret.
+        assertArrayEquals(new char[keys.lastGenerated.length], keys.lastGenerated);
+    }
+
+    @Test
+    void createSshKeyReplacesAnExistingKeyForTheSameHost() {
+        CredentialId original = service.createSshKey("github.com", "git", "old").id();
+        events.clear();
+
+        CredentialRef rotated = service.createSshKey("github.com", "git", "new");
+
+        assertEquals(original, rotated.id());
+        assertEquals(1, refs.findAll().size());
+    }
+
     /** In-memory secrets store; clones on the way in so wiping the caller's array leaves it intact. */
     private static final class FakeCredentialStore implements CredentialStore {
         private final Map<String, Credential> secrets = new LinkedHashMap<>();
@@ -240,6 +275,17 @@ class CredentialServiceTest {
         public void delete(CredentialId id) {
             rows.remove(id);
             events.add("refDelete:" + id.asString());
+        }
+    }
+
+    /** Deterministic key generation so tests can assert on the exact material produced. */
+    private static final class FakeSshKeyFactory implements SshKeyFactory {
+        private char[] lastGenerated;
+
+        @Override
+        public SshKeyPair generate(String comment) {
+            lastGenerated = "private-pem".toCharArray();
+            return new SshKeyPair(lastGenerated, "ssh-ed25519 AAAA... " + comment);
         }
     }
 }

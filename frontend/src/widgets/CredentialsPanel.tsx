@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 
 import {
+  useCreateSshKey,
   useCredentials,
   useDeleteCredential,
   useSaveCredential,
@@ -42,6 +43,7 @@ function CredentialRow({ credential }: { credential: Credential }) {
           {deleting ? t('settings.credentials.deleting') : t('settings.credentials.delete')}
         </Button>
       </div>
+      {credential.publicKey ? <PublicKeyDisplay publicKey={credential.publicKey} /> : null}
       {del.isError ? (
         // A failed delete only re-enabled the button before; say why it failed.
         <p className="text-xs text-vcs-deleted">
@@ -49,6 +51,117 @@ function CredentialRow({ credential }: { credential: Credential }) {
         </p>
       ) : null}
     </li>
+  )
+}
+
+/** A public key line with a copy button — the whole reason it's shown at all. */
+function PublicKeyDisplay({ publicKey }: { publicKey: string }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    await navigator.clipboard.writeText(publicKey)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded bg-base px-2 py-1">
+      <code className="min-w-0 flex-1 truncate text-xs text-muted">{publicKey}</code>
+      <Button size="sm" variant="ghost" onClick={copy}>
+        {copied ? t('settings.credentials.sshCopied') : t('settings.credentials.sshCopy')}
+      </Button>
+    </div>
+  )
+}
+
+/** Generates a fresh Ed25519 key and shows its public half so the user can copy it. */
+function AddSshKeyForm() {
+  const t = useT()
+  const create = useCreateSshKey()
+  const [host, setHost] = useState('')
+  const [username, setUsername] = useState('')
+  const [comment, setComment] = useState('')
+
+  const canSubmit = host.trim() !== '' && !create.isPending
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!canSubmit) return
+    create.mutate(
+      {
+        host: host.trim(),
+        username: username.trim() || undefined,
+        comment: comment.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          setHost('')
+          setUsername('')
+          setComment('')
+        },
+      },
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border border-border bg-elevated p-4">
+      <div>
+        <h3 className="text-sm font-medium text-primary">{t('settings.credentials.sshTitle')}</h3>
+        <p className="mt-1 text-xs text-muted">{t('settings.credentials.sshDescription')}</p>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className="text-xs text-muted">{t('settings.credentials.host')}</span>
+          <input
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder={t('settings.credentials.hostPlaceholder')}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">{t('settings.credentials.username')}</span>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder={t('settings.credentials.usernamePlaceholder')}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">{t('settings.credentials.sshComment')}</span>
+          <input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={t('settings.credentials.sshCommentPlaceholder')}
+            className={inputClass}
+          />
+        </label>
+      </div>
+
+      {create.isError ? (
+        <p className="text-xs text-vcs-deleted">
+          {t('settings.credentials.sshGenerateFailed')}: {t(apiErrorKey(create.error))}
+        </p>
+      ) : null}
+
+      {create.data ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted">{t('settings.credentials.sshPublicKeyLabel')}</span>
+          <PublicKeyDisplay publicKey={create.data.publicKey ?? ''} />
+        </div>
+      ) : null}
+
+      <div>
+        <Button type="submit" disabled={!canSubmit}>
+          {create.isPending
+            ? t('settings.credentials.sshGenerating')
+            : t('settings.credentials.sshGenerate')}
+        </Button>
+      </div>
+    </form>
   )
 }
 
@@ -164,6 +277,7 @@ export function CredentialsPanel() {
       </div>
 
       <AddCredentialForm />
+      <AddSshKeyForm />
 
       {credentials.isPending ? (
         <p className="flex items-center gap-2 text-xs text-muted">

@@ -5,6 +5,8 @@ import dev.configflow.domain.credential.CredentialId;
 import dev.configflow.domain.credential.CredentialRef;
 import dev.configflow.domain.credential.CredentialRefStore;
 import dev.configflow.domain.credential.CredentialStore;
+import dev.configflow.domain.credential.SshKeyFactory;
+import dev.configflow.domain.credential.SshKeyPair;
 
 import java.time.Clock;
 import java.util.Arrays;
@@ -25,12 +27,14 @@ public final class CredentialService
 
 	private final CredentialStore secrets;
 	private final CredentialRefStore refs;
+	private final SshKeyFactory keys;
 	private final Clock clock;
 
-	public CredentialService(CredentialStore secrets, CredentialRefStore refs, Clock clock)
+	public CredentialService(CredentialStore secrets, CredentialRefStore refs, SshKeyFactory keys, Clock clock)
 	{
 		this.secrets = Objects.requireNonNull(secrets, "secrets");
 		this.refs = Objects.requireNonNull(refs, "refs");
+		this.keys = Objects.requireNonNull(keys, "keys");
 		this.clock = Objects.requireNonNull(clock, "clock");
 	}
 
@@ -51,11 +55,38 @@ public final class CredentialService
 		{
 			throw new IllegalArgumentException("'secret' must not be empty");
 		}
+		return store(host, protocol, username, secret, null);
+	}
+
+	/**
+	 * Generates an SSH key for a host: the private half goes to the OS store, the public half comes back for the user to paste into the server.
+	 *
+	 * <p>Replaces any key already registered for that host and account, for the same
+	 * reason {@link #save} replaces a rotated token — a second row would only shadow the first.</p>
+	 */
+	public CredentialRef createSshKey(String host, String username, String comment)
+	{
+		SshKeyPair generated = keys.generate(comment);
+		try
+		{
+			return store(host, "ssh", username, generated.privateKeyPem(), generated.publicKey());
+		}
+		finally
+		{
+			// store() wipes the array it was handed; this also covers the path where it
+			// threw before getting that far.
+			Arrays.fill(generated.privateKeyPem(), '\0');
+		}
+	}
+
+	/** The two-store dance both entry points share; wipes {@code secret} before returning. */
+	private CredentialRef store(String host, String protocol, String username, char[] secret, String publicKey)
+	{
 		try
 		{
 			// CredentialRef normalises host, protocol and username; build one first so
 			// the lookup below asks with the same spelling the row was written with.
-			CredentialRef candidate = CredentialRef.issue(host, protocol, username, "pending", clock.instant());
+			CredentialRef candidate = new CredentialRef(CredentialId.newId(), host, protocol, username, "pending", publicKey, clock.instant());
 			Optional<CredentialRef> existing = refs.findByTarget(candidate.host(), candidate.protocol(), candidate.username());
 
 			// Secret first. The row has to name a key that already resolves, or a crash
@@ -66,9 +97,9 @@ public final class CredentialService
 			CredentialRef saved = existing
 					// Keep the identity: anything already pointing at this credential by
 					// id must survive its owner rotating the token.
-					.map(previous -> new CredentialRef(previous.id(), candidate.host(), candidate.protocol(), candidate.username(), storeKey,
+					.map(previous -> new CredentialRef(previous.id(), candidate.host(), candidate.protocol(), candidate.username(), storeKey, publicKey,
 							previous.createdAt())).orElseGet(
-							() -> new CredentialRef(candidate.id(), candidate.host(), candidate.protocol(), candidate.username(), storeKey,
+							() -> new CredentialRef(candidate.id(), candidate.host(), candidate.protocol(), candidate.username(), storeKey, publicKey,
 									candidate.createdAt()));
 
 			try

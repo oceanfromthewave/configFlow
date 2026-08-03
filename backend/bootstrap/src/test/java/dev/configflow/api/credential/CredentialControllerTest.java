@@ -142,4 +142,57 @@ class CredentialControllerTest {
 
         verify(credentialService, never()).delete(any());
     }
+
+    // --- createSshKey ------------------------------------------------------
+
+    @Test
+    void createSshKey_returnsThePublicKeyAndNothingSecret() throws Exception {
+        CredentialRef sshKey = CredentialRef.issueSshkey(
+                "github.com", "git", "os-store-key-xyz", "ssh-ed25519 AAAA... git@laptop", NOW);
+        when(credentialService.createSshKey(any(), any(), any())).thenReturn(sshKey);
+
+        mvc.perform(post("/api/v1/credentials/ssh-keys")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"host\":\"github.com\",\"username\":\"git\",\"comment\":\"git@laptop\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.host").value("github.com"))
+                .andExpect(jsonPath("$.publicKey").value("ssh-ed25519 AAAA... git@laptop"))
+                .andExpect(jsonPath("$.secret").doesNotExist())
+                .andExpect(jsonPath("$.storeKey").doesNotExist());
+
+        verify(credentialService).createSshKey("github.com", "git", "git@laptop");
+    }
+
+    @Test
+    void createSshKey_withoutABodyIs400() throws Exception {
+        mvc.perform(post("/api/v1/credentials/ssh-keys")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(credentialService, never()).createSshKey(any(), any(), any());
+    }
+
+    @Test
+    void createSshKey_blankHostIs400() throws Exception {
+        when(credentialService.createSshKey(any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("'host' must not be blank"));
+
+        mvc.perform(post("/api/v1/credentials/ssh-keys")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"host\":\"  \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void list_returnsThePublicKeyForAnSshCredential() throws Exception {
+        CredentialRef sshKey = CredentialRef.issueSshkey(
+                "github.com", "git", "os-store-key-xyz", "ssh-ed25519 AAAA... git@laptop", NOW);
+        when(credentialService.list()).thenReturn(List.of(sshKey));
+
+        mvc.perform(get("/api/v1/credentials"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].publicKey").value("ssh-ed25519 AAAA... git@laptop"));
+    }
 }
