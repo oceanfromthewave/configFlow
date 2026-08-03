@@ -26,18 +26,25 @@ import java.util.List;
  * <p>JGit ships no SSH transport of its own, and the one it can load reads keys from
  * {@code ~/.ssh}. Ours live in the OS keychain instead, so they are handed over in memory and never written to disk.</p>
  *
- * <p>Every stored key is offered rather than the one matching the host: SSH publickey
- * auth works by the client presenting identities until the server accepts one, and the point at which sshd asks for them does not say which host it is talking
- * to.</p>
+ * <p>One {@link Session} per remote command, scoped to that command's host: offering a
+ * key meant for one server to a different one leaks which identities the user holds, and
+ * can burn through a server's authentication attempt limit before the right key is even
+ * tried. The factory it wraps also owns real IO threads, so the session is
+ * {@link AutoCloseable} — the caller closes it once the command finishes, exactly like the
+ * {@code Git} handle it runs alongside.</p>
  */
 final class GitSshAuth
 {
 	private final RemoteCredentialResolver credentials;
-	private final TransportConfigCallback callback;
 
 	GitSshAuth(RemoteCredentialResolver credentials)
 	{
 		this.credentials = credentials;
+	}
+
+	/** Opens a session scoped to {@code host}'s stored keys; the caller must close it. */
+	Session open(String host)
+	{
 		SshdSessionFactory factory = new SshdSessionFactoryBuilder()
 				// No password fallback: this app has no shell to prompt from, and an
 				// interactive attempt would hang the operation instead of failing it.
@@ -46,31 +53,20 @@ final class GitSshAuth
 				// refused rather than trusted. Managing that file is its own slice.
 				.setSshDirectory(new File(FS.DETECTED.userHome(), ".ssh"))
 				// Called per session, so a key added after startup is picked up without one.
-				.setDefaultKeysProvider(ignored -> storedKeys()).build(null);
-		this.callback = transport -> {
-			if(transport instanceof SshTransport ssh)
-			{
-				ssh.setSshSessionFactory(factory);
-			}
-		};
-	}
-
-	/** Install on every remote command; harmless on HTTPS, which is not an {@link SshTransport}. */
-	TransportConfigCallback callback()
-	{
-		return callback;
+				.setDefaultKeysProvider(ignored -> storedKeys(host)).build(null);
+		return new Session(factory);
 	}
 
 	/**
-	 * Parses every stored SSH key into a usable pair.
+	 * Parses every key stored for {@code host} into a usable pair.
 	 *
 	 * <p>A key that will not parse is skipped rather than thrown: one unreadable entry
 	 * must not stop the others from being offered.</p>
 	 */
-	private List<KeyPair> storedKeys()
+	private List<KeyPair> storedKeys(String host)
 	{
 		List<KeyPair> pairs = new ArrayList<>();
-		for(Credential credential : credentials.resolveAll("ssh"))
+		for(Credential credential : credentials.resolveAll(host, "ssh"))
 		{
 			byte[] pem = toUtf8(credential.secret());
 			try
@@ -97,5 +93,34 @@ final class GitSshAuth
 		byte[] bytes = new byte[buffer.remaining()];
 		buffer.get(bytes);
 		return bytes;
+	}
+
+	/** One remote command's SSH auth. Install {@link #callback()}, then close when done. */
+	static final class Session implements AutoCloseable
+	{
+		private final SshdSessionFactory factory;
+
+		private Session(SshdSessionFactory factory)
+		{
+			this.factory = factory;
+		}
+
+		/** Install on the command; harmless on HTTPS, which is not an {@link SshTransport}. */
+		TransportConfigCallback callback()
+		{
+			return transport -> {
+				if(transport instanceof SshTransport ssh)
+				{
+					ssh.setSshSessionFactory(factory);
+				}
+			};
+		}
+
+		/** Releases the SSH IO threads the factory started. */
+		@Override
+		public void close()
+		{
+			factory.close();
+		}
 	}
 }

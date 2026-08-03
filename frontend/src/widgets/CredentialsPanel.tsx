@@ -58,19 +58,32 @@ function CredentialRow({ credential }: { credential: Credential }) {
 function PublicKeyDisplay({ publicKey }: { publicKey: string }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
 
   async function copy() {
-    await navigator.clipboard.writeText(publicKey)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      await navigator.clipboard.writeText(publicKey)
+      setCopyFailed(false)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // No clipboard API (insecure context, unsupported browser): say so instead of
+      // leaving the click silently do nothing.
+      setCopyFailed(true)
+    }
   }
 
   return (
-    <div className="flex items-center gap-2 rounded bg-base px-2 py-1">
-      <code className="min-w-0 flex-1 truncate text-xs text-muted">{publicKey}</code>
-      <Button size="sm" variant="ghost" onClick={copy}>
-        {copied ? t('settings.credentials.sshCopied') : t('settings.credentials.sshCopy')}
-      </Button>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 rounded bg-base px-2 py-1">
+        <code className="min-w-0 flex-1 truncate text-xs text-muted">{publicKey}</code>
+        <Button size="sm" variant="ghost" onClick={copy}>
+          {copied ? t('settings.credentials.sshCopied') : t('settings.credentials.sshCopy')}
+        </Button>
+      </div>
+      {copyFailed ? (
+        <p className="text-xs text-vcs-deleted">{t('settings.credentials.sshCopyFailed')}</p>
+      ) : null}
     </div>
   )
 }

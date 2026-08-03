@@ -467,7 +467,7 @@ class GitRemotesTest {
         }
 
         @Override
-        public List<Credential> resolveAll(String protocol) {
+        public List<Credential> resolveAll(String host, String protocol) {
             return List.of();
         }
     }

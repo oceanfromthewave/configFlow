@@ -259,6 +259,7 @@
   "settings.credentials.sshPublicKeyLabel": "Public key",
   "settings.credentials.sshCopy": "Copy",
   "settings.credentials.sshCopied": "Copied",
+  "settings.credentials.sshCopyFailed": "Could not copy — select the key and copy it manually",
   "authPrompt.title": "Authentication required",
   "authPrompt.description": "{target} rejected the request. Enter credentials to save and retry.",
   "authPrompt.submit": "Save and retry",

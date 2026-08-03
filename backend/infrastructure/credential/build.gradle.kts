@@ -2,8 +2,8 @@
  * infrastructure:credential: OS credential store adapters.
  *   - InMemoryCredentialStore: process-memory placeholder / non-Windows fallback.
  *   - WindowsCredentialStore:  Windows Credential Manager via JNA (advapi32).
+ *   - SshdSshKeyFactory:       Ed25519 key generation via Apache MINA sshd.
  * Depends on domain only (never on application, bootstrap or sibling infra modules).
- *   - SshdSShKeyFactory:       Ed25519 key generation via Apache MINA sshd.
  */
 plugins {
     `java-library`
@@ -19,6 +19,6 @@ dependencies {
     // net.i2p or BouncyCastle (its JDK path is not wired in), and BouncyCastle is the
     // maintained of the two.
     implementation("org.apache.sshd:sshd-osgi:2.15.0")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.81")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.81")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.84")
 }
