@@ -51,8 +51,17 @@ public final class ResetService
 			{
 				// A hard reset rewrites the working tree and every mode moves the branch, so
 				// both panels are stale afterwards — including when the reset failed partway.
-				events.refsChanged(id);
-				events.workingTreeChanged(id);
+				try
+				{
+					events.refsChanged(id);
+					events.workingTreeChanged(id);
+				}
+				catch(RuntimeException ignored)
+				{
+					// A finally block that throws replaces the reset's own exception, so the
+					// user would see "notification failed" instead of why the reset failed.
+					// The refresh is best-effort; the outcome is not.
+				}
 			}
 		});
 	}
