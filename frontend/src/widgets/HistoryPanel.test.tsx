@@ -145,27 +145,29 @@ describe('HistoryPanel', () => {
     expect(await screen.findByText('second page')).toBeInTheDocument()
     // The first page stays rendered above the newly appended one.
     expect(screen.getByText('first page')).toBeInTheDocument()
-    expect(urls[0]).not.toContain('cursor=')
-    expect(urls[1]).toContain('cursor=cursor-2')
+    const historyUrls = urls.filter((url) => url.includes('/history'))
+    expect(historyUrls[0]).not.toContain('cursor=')
+    expect(historyUrls[1]).toContain('cursor=cursor-2')
     expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument()
   })
 
   it('applies filters only on submit, and drops blank ones', async () => {
     const urls = stubHistory([{ items: [], nextCursor: null }])
+    const historyUrls = () => urls.filter((url) => url.includes('/history'))
 
     renderPanel()
-    await waitFor(() => expect(urls).toHaveLength(1))
+    await waitFor(() => expect(historyUrls()).toHaveLength(1))
 
     await userEvent.type(screen.getByLabelText('작성자'), 'alice')
     // Typing alone must not refire the query.
-    expect(urls).toHaveLength(1)
+    expect(historyUrls()).toHaveLength(1)
 
     await userEvent.click(screen.getByRole('button', { name: '검색' }))
 
-    await waitFor(() => expect(urls).toHaveLength(2))
-    expect(urls[1]).toContain('author=alice')
+    await waitFor(() => expect(historyUrls()).toHaveLength(2))
+    expect(historyUrls()[1]).toContain('author=alice')
     // The message box was left empty, so it must not narrow the query.
-    expect(urls[1]).not.toContain('message=')
+    expect(historyUrls()[1]).not.toContain('message=')
   })
 
   it('clears the applied filters', async () => {

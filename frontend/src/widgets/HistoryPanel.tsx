@@ -6,7 +6,7 @@ import {
     type FormEvent,
 } from 'react'
 
-import {useCherryPick, useHistory, useRevert} from '@/entities/repository/api/repositories'
+import {useCherryPick, useCompare, useHistory, useRefs, useRevert} from '@/entities/repository/api/repositories'
 import {computeCommitGraph, type RowGraph} from '@/entities/repository/lib/commitGraph'
 import {CommitDetail} from '@/widgets/CommitDetail'
 import type {
@@ -192,13 +192,28 @@ export function HistoryPanel() {
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
 
     // Draft vs applied: typing must not refire the query on every keystroke.
-    const [draft, setDraft] = useState<HistoryFilters>({author: '', message: ''})
+    const [draft, setDraft] = useState<HistoryFilters>({author: '', message: '', branch: ''})
     const [filters, setFilters] = useState<HistoryFilters>({})
     const [selectedId, setSelectedId] = useState<string | null>(null)
 
+    // Compare mode swaps the commit source: two refs' divergence instead of the
+    // filtered history feed. Its own base/target state, independent of filters.
+    const [compareOpen, setCompareOpen] = useState(false)
+    const [compareBase, setCompareBase] = useState('')
+    const [compareTarget, setCompareTarget] = useState('')
+
     const history = useHistory(repositoryId, filters)
+    const refs = useRefs(repositoryId)
+    const compare = useCompare(repositoryId, compareOpen ? compareBase : null, compareOpen ? compareTarget : null)
     const cherryPick = useCherryPick()
     const revert = useRevert()
+
+    const branchNames = useMemo(
+        () => (refs.data?.refs ?? [])
+            .filter((ref) => ref.kind === 'BRANCH' || ref.kind === 'REMOTE_BRANCH')
+            .map((ref) => ref.name),
+        [refs.data],
+    )
 
     // The commit a right-click opened the context menu on, and where to anchor it.
     const [commitMenu, setCommitMenu] = useState<
@@ -277,9 +292,11 @@ export function HistoryPanel() {
     // data: paging in more commits recomputes, but unrelated renders (typing into
     // a filter box) reuse the previous layout.
     const {revisions, graph} = useMemo(() => {
-        const items = history.data?.pages.flatMap((page) => page.items) ?? []
+        const items = compareOpen
+            ? compare.data?.revisions ?? []
+            : history.data?.pages.flatMap((page) => page.items) ?? []
         return {revisions: items, graph: computeCommitGraph(items)}
-    }, [history.data])
+    }, [history.data, compareOpen, compare.data])
 
     if (repositoryId == null) {
         return (
@@ -292,64 +309,119 @@ export function HistoryPanel() {
 
     function applyFilters(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
-        setFilters({author: draft.author, message: draft.message})
+        setFilters({author: draft.author, branch: draft.branch, message: draft.message})
     }
 
     function clearFilters() {
-        setDraft({author: '', message: ''})
+        setDraft({author: '', message: '', branch: ''})
         setFilters({})
     }
 
-    const hasDraft = Boolean(draft.author?.trim() || draft.message?.trim())
+    const hasDraft = Boolean(draft.author?.trim() || draft.branch?.trim() || draft.message?.trim())
     // The selection is held by id; if that commit is no longer in the loaded set
     // (a filter narrowed it away), the detail pane falls back to its empty hint.
     const selected = revisions.find((revision) => revision.id === selectedId) ?? null
 
     return (
         <div className="flex h-full flex-col">
-            <form
-                onSubmit={applyFilters}
-                className="flex shrink-0 items-center gap-2 border-b border-border p-2"
-            >
-                <input
-                    value={draft.author ?? ''}
-                    onChange={(event) => setDraft({...draft, author: event.target.value})}
-                    placeholder={t('history.filterAuthor')}
-                    aria-label={t('history.filterAuthor')}
-                    className="w-32 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
-                />
-                <input
-                    value={draft.message ?? ''}
-                    onChange={(event) => setDraft({...draft, message: event.target.value})}
-                    placeholder={t('history.filterMessage')}
-                    aria-label={t('history.filterMessage')}
-                    className="min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
-                />
-                <Button type="submit" size="sm" variant="primary">
-                    {t('history.search')}
-                </Button>
-                {hasDraft || filters.author || filters.message ? (
-                    <Button size="sm" variant="ghost" onClick={clearFilters}>
-                        {t('history.clear')}
+            {compareOpen ? (
+                <div className="flex shrink-0 items-center gap-2 border-b border-border p-2">
+                    <input
+                        list="history-compare-refs"
+                        value={compareBase}
+                        onChange={(event) => setCompareBase(event.target.value)}
+                        placeholder={t('history.compareBase')}
+                        aria-label={t('history.compareBase')}
+                        className="w-36 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                    />
+                    <input
+                        list="history-compare-refs"
+                        value={compareTarget}
+                        onChange={(event) => setCompareTarget(event.target.value)}
+                        placeholder={t('history.compareTarget')}
+                        aria-label={t('history.compareTarget')}
+                        className="w-36 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                    />
+                    <datalist id="history-compare-refs">
+                        {branchNames.map((name) => (
+                            <option key={name} value={name}/>
+                        ))}
+                    </datalist>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                            setCompareOpen(false)
+                            setSelectedId(null)
+                        }}
+                    >
+                        {t('history.compareBack')}
                     </Button>
-                ) : null}
-            </form>
+                </div>
+            ) : (
+                <form
+                    onSubmit={applyFilters}
+                    className="flex shrink-0 items-center gap-2 border-b border-border p-2"
+                >
+                    <input
+                        value={draft.author ?? ''}
+                        onChange={(event) => setDraft({...draft, author: event.target.value})}
+                        placeholder={t('history.filterAuthor')}
+                        aria-label={t('history.filterAuthor')}
+                        className="w-32 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                    />
+                    <input
+                        value={draft.branch ?? ''}
+                        onChange={(event) => setDraft({...draft, branch: event.target.value})}
+                        placeholder={t('history.filterBranch')}
+                        aria-label={t('history.filterBranch')}
+                        className="w-32 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                    />
+                    <input
+                        value={draft.message ?? ''}
+                        onChange={(event) => setDraft({...draft, message: event.target.value})}
+                        placeholder={t('history.filterMessage')}
+                        aria-label={t('history.filterMessage')}
+                        className="min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 py-1 text-xs text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+                    />
+                    <Button type="submit" size="sm" variant="primary">
+                        {t('history.search')}
+                    </Button>
+                    {hasDraft || filters.author || filters.branch || filters.message ? (
+                        <Button size="sm" variant="ghost" onClick={clearFilters}>
+                            {t('history.clear')}
+                        </Button>
+                    ) : null}
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setCompareOpen(true)}
+                    >
+                        {t('history.compare')}
+                    </Button>
+                </form>
+            )}
 
             <div className="flex min-h-0 flex-1">
                 <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                    {history.isPending ? (
+                    {(compareOpen ? compare.isPending && compare.fetchStatus !== 'idle' : history.isPending) ? (
                         <div className="flex items-center gap-2 p-2 text-sm text-muted">
                             <Spinner/>
-                            {t('history.loading')}
+                            {t(compareOpen ? 'history.compareLoading' : 'history.loading')}
                         </div>
-                    ) : history.isError ? (
+                    ) : compareOpen && compare.isError ? (
+                        <p className="p-2 text-sm text-vcs-deleted">
+                            {t('history.compareFailed')}: {t(apiErrorKey(compare.error))}
+                        </p>
+                    ) : !compareOpen && history.isError ? (
                         <p className="p-2 text-sm text-vcs-deleted">
                             {t('history.loadFailed')}: {t(apiErrorKey(history.error))}
                         </p>
                     ) : revisions.length === 0 ? (
                         <EmptyState
-                            title={t('history.emptyTitle')}
-                            description={t('history.emptyDescription')}
+                            title={t(compareOpen ? 'history.compareEmptyTitle' : 'history.emptyTitle')}
+                            description={t(compareOpen ? 'history.compareEmptyDescription' : 'history.emptyDescription')}
                         />
                     ) : (
                         <>
@@ -379,7 +451,7 @@ export function HistoryPanel() {
                                     {t('revert.failed')}: {t(apiErrorKey(revert.error))}
                                 </p>
                             ) : null}
-                            {history.hasNextPage ? (
+                            {!compareOpen && history.hasNextPage ? (
                                 <div className="flex justify-center p-2">
                                     <Button
                                         size="sm"
