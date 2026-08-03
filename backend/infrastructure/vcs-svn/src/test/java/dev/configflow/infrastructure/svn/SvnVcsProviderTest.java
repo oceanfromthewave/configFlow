@@ -14,6 +14,7 @@ import dev.configflow.domain.vcs.model.FileChange;
 import dev.configflow.domain.vcs.model.HistoryQuery;
 import dev.configflow.domain.vcs.model.IgnorePattern;
 import dev.configflow.domain.vcs.model.Page;
+import dev.configflow.domain.vcs.model.RemoteEntry;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.Revision;
 import dev.configflow.domain.vcs.model.RevisionId;
@@ -309,6 +310,65 @@ class SvnVcsProviderTest {
         assertThrows(NoSuchElementException.class, () -> provider.show(handle, new RevisionId("r999")));
     }
 
+    @Test
+    void lockThenUnlockRoundTrips() {
+        RepositoryHandle handle = checkout();
+
+        provider.lock(handle, List.of(Path.of("base.txt")), "reserving this", OperationMonitor.noop());
+        // Unlock only succeeds if the path is actually locked, so this doubles as proof
+        // that lock() took effect on the server.
+        provider.unlock(handle, List.of(Path.of("base.txt")), false, OperationMonitor.noop());
+    }
+
+    @Test
+    void unlockWithoutBreakFailsOnALockHeldByAnotherWorkingCopy() throws Exception {
+        RepositoryHandle handle = checkout();
+        RepositoryHandle other = provider.cloneRepository(
+                new CloneRequest(repositoryUrl.toString(), checkoutDir.resolve("other-wc"), null), OperationMonitor.noop());
+        provider.lock(other, List.of(Path.of("base.txt")), null, OperationMonitor.noop());
+
+        assertThrows(dev.configflow.domain.vcs.exception.VcsException.class,
+                () -> provider.unlock(handle, List.of(Path.of("base.txt")), false, OperationMonitor.noop()));
+
+        provider.unlock(handle, List.of(Path.of("base.txt")), true, OperationMonitor.noop());
+    }
+
+    @Test
+    void lockOnAnEmptyListIsANoop() {
+        RepositoryHandle handle = checkout();
+        provider.lock(handle, List.of(), "comment", OperationMonitor.noop());
+    }
+
+    @Test
+    void unlockOnAnEmptyListIsANoop() {
+        RepositoryHandle handle = checkout();
+        provider.unlock(handle, List.of(), false, OperationMonitor.noop());
+    }
+
+    @Test
+    void browseListsTheChildrenOfTheRepositoryRoot() {
+        List<RemoteEntry> entries = provider.browse(repositoryUrl.toString(), null);
+
+        assertEquals(List.of(new RemoteEntry("base.txt", false, 5, new RevisionId("r1"))), entries);
+    }
+
+    @Test
+    void browseAtAnOlderRevisionSeesThatRevisionsTree() throws Exception {
+        commitDirectlyToServer("second.txt", "second\n");
+
+        List<RemoteEntry> atR1 = provider.browse(repositoryUrl.toString(), new RevisionId("r1"));
+        List<RemoteEntry> atHead = provider.browse(repositoryUrl.toString(), null);
+
+        assertEquals(List.of("base.txt"), atR1.stream().map(RemoteEntry::name).toList());
+        assertEquals(List.of("base.txt", "second.txt"), atHead.stream().map(RemoteEntry::name).toList());
+    }
+
+    @Test
+    void browseRejectsAPathThatDoesNotExist() {
+        assertThrows(NoSuchElementException.class,
+                () -> provider.browse(repositoryUrl.toString() + "/no-such-path", null));
+    }
+
     private void commitDirectlyToServer(String fileName, String content) throws Exception {
         Path staging = Files.createTempDirectory(serverDir, "svn-direct-commit");
         SVNClientManager clients = SVNClientManager.newInstance();
@@ -316,7 +376,11 @@ class SvnVcsProviderTest {
             clients.getUpdateClient().doCheckout(repositoryUrl, staging.toFile(),
                     org.tmatesoft.svn.core.wc.SVNRevision.HEAD, org.tmatesoft.svn.core.wc.SVNRevision.HEAD,
                     org.tmatesoft.svn.core.SVNDepth.INFINITY, false);
+            boolean isNewFile = !Files.exists(staging.resolve(fileName));
             Files.writeString(staging.resolve(fileName), content);
+            if (isNewFile) {
+                clients.getWCClient().doAdd(staging.resolve(fileName).toFile(), false, false, false, false);
+            }
             clients.getCommitClient().doCommit(new java.io.File[] { staging.toFile() }, false, "direct commit", null, null, false, false,
                     org.tmatesoft.svn.core.SVNDepth.INFINITY);
         } finally {

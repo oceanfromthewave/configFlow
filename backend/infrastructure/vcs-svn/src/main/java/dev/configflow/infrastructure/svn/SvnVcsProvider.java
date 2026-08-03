@@ -5,23 +5,7 @@ import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.exception.VcsException;
 import dev.configflow.domain.vcs.exception.VcsPreconditionException;
-import dev.configflow.domain.vcs.model.Author;
-import dev.configflow.domain.vcs.model.ChangeType;
-import dev.configflow.domain.vcs.model.CloneRequest;
-import dev.configflow.domain.vcs.model.CommitRequest;
-import dev.configflow.domain.vcs.model.ConflictedFile;
-import dev.configflow.domain.vcs.model.FetchRequest;
-import dev.configflow.domain.vcs.model.FileChange;
-import dev.configflow.domain.vcs.model.HistoryQuery;
-import dev.configflow.domain.vcs.model.IgnorePattern;
-import dev.configflow.domain.vcs.model.Page;
-import dev.configflow.domain.vcs.model.PullRequest;
-import dev.configflow.domain.vcs.model.PushRequest;
-import dev.configflow.domain.vcs.model.RepositoryHandle;
-import dev.configflow.domain.vcs.model.Revision;
-import dev.configflow.domain.vcs.model.RevisionId;
-import dev.configflow.domain.vcs.model.VcsType;
-import dev.configflow.domain.vcs.model.WorkingTreeStatus;
+import dev.configflow.domain.vcs.model.*;
 import dev.configflow.domain.vcs.port.*;
 
 import java.io.File;
@@ -36,16 +20,9 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import org.tmatesoft.svn.core.SVNCancelException;
-import org.tmatesoft.svn.core.SVNCommitInfo;
-import org.tmatesoft.svn.core.SVNDepth;
-import org.tmatesoft.svn.core.SVNErrorCode;
-import org.tmatesoft.svn.core.SVNErrorMessage;
-import org.tmatesoft.svn.core.SVNException;
-import org.tmatesoft.svn.core.SVNLogEntry;
-import org.tmatesoft.svn.core.SVNProperty;
-import org.tmatesoft.svn.core.SVNPropertyValue;
-import org.tmatesoft.svn.core.SVNURL;
+import org.tmatesoft.svn.core.*;
+import org.tmatesoft.svn.core.io.SVNRepository;
+import org.tmatesoft.svn.core.io.SVNRepositoryFactory;
 import org.tmatesoft.svn.core.wc.ISVNEventHandler;
 import org.tmatesoft.svn.core.wc.SVNClientManager;
 import org.tmatesoft.svn.core.wc.SVNEvent;
@@ -54,15 +31,30 @@ import org.tmatesoft.svn.core.wc.SVNRevision;
 import org.tmatesoft.svn.core.wc.SVNStatus;
 import org.tmatesoft.svn.core.wc.SVNStatusType;
 import org.tmatesoft.svn.core.wc.SVNWCUtil;
+import org.tmatesoft.svn.core.internal.io.dav.DAVRepositoryFactory;
+import org.tmatesoft.svn.core.internal.io.fs.FSRepositoryFactory;
+import org.tmatesoft.svn.core.internal.io.svn.SVNRepositoryFactoryImpl;
 
 /**
  * SVNKit-based Subversion provider.
  *
- * <p>Implements checkout and working-copy status; update/commit/lock arrive in later
- * slices. Note the capability set has no {@code STAGING}: SVN has no index, so every local change is reported as unstaged.</p>
+ * <p>Note the capability set has no {@code STAGING}: SVN has no index, so every local
+ * change is reported as unstaged.</p>
  */
-public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, WorkingTreeOperations, RemoteSyncOperations, CommitOperations
+public final class SvnVcsProvider
+		implements VcsProvider, RepositoryOperations, WorkingTreeOperations, RemoteSyncOperations, CommitOperations, LockOperations, RemoteBrowseOperations
 {
+
+	static
+	{
+		// SVNKit dispatches by URL scheme through these factories; without registering
+		// them a checkout of an http(s):// or svn:// remote fails even though the code
+		// looks identical to a working file:// one. Registered once here rather than at
+		// every call site, since nothing about it varies per repository.
+		FSRepositoryFactory.setup();
+		DAVRepositoryFactory.setup();
+		SVNRepositoryFactoryImpl.setup();
+	}
 
 	private static final Set<VcsCapability> CAPABILITIES = Set.of(VcsCapability.MERGE, VcsCapability.LOCK, VcsCapability.REMOTE_BROWSE);
 
@@ -220,8 +212,8 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 				return;
 			}
 			globs.add(glob);
-			clients.getWCClient().doSetProperty(directory, SVNProperty.IGNORE, SVNPropertyValue.create(String.join("\n", globs) + "\n"), false,
-					SVNDepth.EMPTY, null, null);
+			clients.getWCClient()
+					.doSetProperty(directory, SVNProperty.IGNORE, SVNPropertyValue.create(String.join("\n", globs) + "\n"), false, SVNDepth.EMPTY, null, null);
 		}
 		catch(SVNException e)
 		{
@@ -264,8 +256,8 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 		clients.setEventHandler(new SvnProgress(monitor, "Updating"));
 		try
 		{
-			clients.getUpdateClient().doUpdate(repo.localPath().toFile(), revision == null ? SVNRevision.HEAD : SVNRevision.create(revision),
-					SVNDepth.INFINITY, false, false);
+			clients.getUpdateClient()
+					.doUpdate(repo.localPath().toFile(), revision == null ? SVNRevision.HEAD : SVNRevision.create(revision), SVNDepth.INFINITY, false, false);
 		}
 		catch(SVNException e)
 		{
@@ -315,14 +307,12 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 			// A committed SVN revision is immutable, hence no AMEND capability.
 			throw new UnsupportedOperationException("SVN cannot amend a committed revision");
 		}
-		File[] targets = request.paths().isEmpty()
-				? new File[] { repo.localPath().toFile() }
-				: resolveAll(repo, request.paths());
+		File[] targets = request.paths().isEmpty() ? new File[] { repo.localPath().toFile() } : resolveAll(repo, request.paths());
 		SVNClientManager clients = SVNClientManager.newInstance();
 		try
 		{
-			SVNCommitInfo info = clients.getCommitClient().doCommit(targets, request.keepLock(), request.message(), null, null, false, false,
-					SVNDepth.INFINITY);
+			SVNCommitInfo info = clients.getCommitClient()
+					.doCommit(targets, request.keepLock(), request.message(), null, null, false, false, SVNDepth.INFINITY);
 			if(info.getNewRevision() < 0)
 			{
 				// SVNKit reports "nothing happened" with revision -1 instead of failing;
@@ -424,6 +414,106 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 		return toRevision(found.get(0));
 	}
 
+	@Override
+	public void lock(RepositoryHandle repo, List<Path> paths, String comment, OperationMonitor monitor)
+	{
+		if(paths.isEmpty())
+		{
+			return;
+		}
+		SVNClientManager clients = SVNClientManager.newInstance();
+		clients.setEventHandler(new SvnProgress(monitor, "Locking"));
+
+		try
+		{
+			clients.getWCClient().doLock(resolveAll(repo, paths), false, comment);
+		}
+		catch(SVNException e)
+		{
+			if(monitor.isCancelled() || e instanceof SVNCancelException)
+			{
+				throw new OperationCancelledException("The lock was cancelled");
+			}
+			throw translate(e, "Failed to lock paths in " + repo.localPath());
+		}
+		finally
+		{
+			clients.dispose();
+		}
+	}
+
+	@Override
+	public void unlock(RepositoryHandle repo, List<Path> paths, boolean breakLock, OperationMonitor monitor)
+	{
+		if(paths.isEmpty())
+		{
+			return;
+		}
+		SVNClientManager clients = SVNClientManager.newInstance();
+		clients.setEventHandler(new SvnProgress(monitor, "Unlocking"));
+
+		try
+		{
+			clients.getWCClient().doUnlock(resolveAll(repo, paths), breakLock);
+		}
+		catch(SVNException e)
+		{
+			if(monitor.isCancelled() || e instanceof SVNCancelException)
+			{
+				throw new OperationCancelledException("The unlock was cancelled");
+			}
+			throw translate(e, "Failed to unlock paths in " + repo.localPath());
+		}
+		finally
+		{
+			clients.dispose();
+		}
+	}
+
+	@Override
+	public List<RemoteEntry> browse(String url, RevisionId revision)
+	{
+		SVNURL location = parseUrl(url);
+		// -1 is SVNKit's "latest revision", which is what a null revision asks for.
+		long number = revision == null ? -1L : parseRevision(revision.value());
+		List<RemoteEntry> entries = new ArrayList<>();
+		SVNRepository repository = null;
+		try
+		{
+			repository = SVNRepositoryFactory.create(location);
+			ISVNDirEntryHandler handler = entry -> {
+				// getDir reports the directory itself with an empty name; only its
+				// children belong in the tree.
+				if(!entry.getName().isEmpty())
+				{
+					entries.add(toRemoteEntry(entry));
+				}
+			};
+			repository.getDir("", number, null, handler);
+		}
+		catch(SVNException e)
+		{
+			throw translate(e, "Failed to browse " + url);
+		}
+		finally
+		{
+			if(repository != null)
+			{
+				repository.closeSession();
+			}
+		}
+		entries.sort(Comparator.comparing(RemoteEntry::directory).reversed().thenComparing(RemoteEntry::name));
+		return entries;
+	}
+
+	private static RemoteEntry toRemoteEntry(SVNDirEntry entry)
+	{
+		boolean directory = entry.getKind() == SVNNodeKind.DIR;
+		// A directory's "size" is meaningless on the server side, so report 0 rather than
+		// whatever the protocol happened to send.
+		return new RemoteEntry(entry.getName(), directory, directory ? 0L : entry.getSize(), toRevisionId(entry.getRevision()));
+	}
+
 	private static void collect(Path root, SVNStatus status, List<FileChange> unstaged, List<ConflictedFile> conflicted)
 	{
 		Path relative = relativize(root, status.getFile());
@@ -490,8 +580,8 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 	}
 
 	/**
-	 * Maps an SVNKit failure onto the exception the API layer renders: 400 for a target
-	 * that cannot be used, 404 for one that does not exist, 500 for everything else.
+	 * Maps an SVNKit failure onto the exception the API layer renders: 400 for a target that cannot be used, 404 for one that does not exist, 500 for
+	 * everything else.
 	 */
 	private static RuntimeException translate(SVNException e, String failureMessage)
 	{
@@ -500,9 +590,7 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 		{
 			return new IllegalArgumentException(failureMessage, e);
 		}
-		if(code == SVNErrorCode.FS_NOT_FOUND || code == SVNErrorCode.RA_LOCAL_REPOS_NOT_FOUND || code == SVNErrorCode.RA_DAV_PATH_NOT_FOUND
-				|| code == SVNErrorCode.RA_SVN_REPOS_NOT_FOUND || code == SVNErrorCode.WC_PATH_NOT_FOUND || code == SVNErrorCode.ENTRY_NOT_FOUND
-				|| code == SVNErrorCode.FS_NO_SUCH_REVISION)
+		if(code == SVNErrorCode.FS_NOT_FOUND || code == SVNErrorCode.RA_LOCAL_REPOS_NOT_FOUND || code == SVNErrorCode.RA_DAV_PATH_NOT_FOUND || code == SVNErrorCode.RA_SVN_REPOS_NOT_FOUND || code == SVNErrorCode.WC_PATH_NOT_FOUND || code == SVNErrorCode.ENTRY_NOT_FOUND || code == SVNErrorCode.FS_NO_SUCH_REVISION)
 		{
 			return new NoSuchElementException(failureMessage);
 		}
