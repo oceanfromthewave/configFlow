@@ -521,6 +521,30 @@ export function useCherryPick() {
     })
 }
 
+export interface RevertPayload {
+    repositoryId: string
+    revisions: string[]
+}
+
+/**
+ * Records the inverse of the given commits, in the order given, on the current branch.
+ *
+ * Like cherry-pick, this answers as soon as the work is queued; a conflict comes
+ * back as a failed operation on the stream rather than an error here.
+ */
+export function useRevert() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, revisions}: RevertPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/revert`, {
+                method: 'POST',
+                body: {revisions},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
 interface PathsPayload {
     repositoryId: string
     paths: string[]

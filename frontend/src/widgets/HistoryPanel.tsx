@@ -6,7 +6,7 @@ import {
     type FormEvent,
 } from 'react'
 
-import {useCherryPick, useHistory} from '@/entities/repository/api/repositories'
+import {useCherryPick, useHistory, useRevert} from '@/entities/repository/api/repositories'
 import {computeCommitGraph, type RowGraph} from '@/entities/repository/lib/commitGraph'
 import {CommitDetail} from '@/widgets/CommitDetail'
 import type {
@@ -198,6 +198,7 @@ export function HistoryPanel() {
 
     const history = useHistory(repositoryId, filters)
     const cherryPick = useCherryPick()
+    const revert = useRevert()
 
     // The commit a right-click opened the context menu on, and where to anchor it.
     const [commitMenu, setCommitMenu] = useState<
@@ -253,6 +254,14 @@ export function HistoryPanel() {
         const {revisionId} = commitMenu
         if (!window.confirm(t('cherryPick.confirm'))) return
         cherryPick.mutate({repositoryId, revisions: [revisionId]})
+        closeCommitMenu()
+    }
+
+    function runRevert() {
+        if (commitMenu == null || repositoryId == null) return
+        const {revisionId} = commitMenu
+        if (!window.confirm(t('revert.confirm'))) return
+        revert.mutate({repositoryId, revisions: [revisionId]})
         closeCommitMenu()
     }
 
@@ -365,6 +374,11 @@ export function HistoryPanel() {
                                     {t('cherryPick.failed')}: {t(apiErrorKey(cherryPick.error))}
                                 </p>
                             ) : null}
+                            {revert.isError ? (
+                                <p className="px-2 py-1 text-xs text-vcs-deleted">
+                                    {t('revert.failed')}: {t(apiErrorKey(revert.error))}
+                                </p>
+                            ) : null}
                             {history.hasNextPage ? (
                                 <div className="flex justify-center p-2">
                                     <Button
@@ -420,6 +434,15 @@ export function HistoryPanel() {
                             className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {t('cherryPick.action')}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitem"
+                            disabled={revert.isPending}
+                            onClick={runRevert}
+                            className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {t('revert.action')}
                         </button>
                     </div>
                 </>
