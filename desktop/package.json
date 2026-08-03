@@ -11,8 +11,8 @@
     "start": "tsc && electron ."
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
-    "electron": "^39.8.5",
-    "typescript": "^5.8.0"
+    "@types/node": "^26.1.2",
+    "electron": "^43.2.0",
+    "typescript": "^7.0.2"
   }
 }
