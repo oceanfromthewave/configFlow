@@ -47,7 +47,7 @@ class SvnVcsProviderTest {
         Path repoRoot = serverDir.resolve("repo");
         repositoryUrl = SVNRepositoryFactory.createLocalRepository(repoRoot.toFile(), true, false);
 
-        Path seed = Files.createTempDirectory("svn-seed");
+        Path seed = Files.createTempDirectory(serverDir, "svn-seed");
         Files.writeString(seed.resolve("base.txt"), "base\n");
         SVNClientManager clients = SVNClientManager.newInstance();
         try {

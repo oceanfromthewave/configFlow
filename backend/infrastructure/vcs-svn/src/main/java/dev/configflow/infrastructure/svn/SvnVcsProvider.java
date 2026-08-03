@@ -24,11 +24,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.stream.Stream;
 
 import org.tmatesoft.svn.core.SVNCancelException;
 import org.tmatesoft.svn.core.SVNDepth;
+import org.tmatesoft.svn.core.SVNErrorCode;
 import org.tmatesoft.svn.core.SVNException;
 import org.tmatesoft.svn.core.SVNURL;
 import org.tmatesoft.svn.core.wc.ISVNEventHandler;
@@ -102,6 +104,12 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 			{
 				throw new OperationCancelledException("The checkout was cancelled");
 			}
+			SVNErrorCode code = e.getErrorMessage() == null ? null : e.getErrorMessage().getErrorCode();
+			if(code == SVNErrorCode.RA_ILLEGAL_URL || code == SVNErrorCode.FS_NOT_FOUND || code == SVNErrorCode.RA_LOCAL_REPOS_NOT_FOUND
+					|| code == SVNErrorCode.RA_DAV_PATH_NOT_FOUND || code == SVNErrorCode.RA_SVN_REPOS_NOT_FOUND)
+			{
+				throw new NoSuchElementException("No such SVN repository: " + request.url());
+			}
 			throw new VcsException("Failed to check out " + request.url(), e);
 		}
 		finally
@@ -134,6 +142,10 @@ public final class SvnVcsProvider implements VcsProvider, RepositoryOperations, 
 		}
 		catch(SVNException e)
 		{
+			if(e.getErrorMessage() != null && e.getErrorMessage().getErrorCode() == SVNErrorCode.WC_NOT_WORKING_COPY)
+			{
+				throw new IllegalArgumentException("Not an SVN working copy: " + root, e);
+			}
 			throw new VcsException("Failed to read status of " + root, e);
 		}
 		finally
