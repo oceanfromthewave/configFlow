@@ -13,5 +13,5 @@ dependencies {
     // JNA core only: StdCallLibrary, Structure, Memory, WString, LastErrorException.
     // We hand-roll the advapi32 Cred* binding (jna-platform ships neither the
     // functions nor the CREDENTIAL struct), so jna-platform is not needed.
-    implementation("net.java.dev.jna:jna:5.14.0")
+    implementation("net.java.dev.jna:jna:5.19.1")
 }

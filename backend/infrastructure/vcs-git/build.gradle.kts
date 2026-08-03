@@ -8,5 +8,5 @@ plugins {
 
 dependencies {
     implementation(project(":domain"))
-    implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
+    implementation("org.eclipse.jgit:org.eclipse.jgit:7.7.1.202607240634-r")
 }
