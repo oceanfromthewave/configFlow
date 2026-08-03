@@ -826,6 +826,11 @@ export function Sidebar() {
                             {t('branch.deleteFailed')}: {t(apiErrorKey(deleteBranch.error))}
                         </p>
                     ) : null}
+                    {reset.isError ? (
+                        <p className="px-2 py-0.5 text-xs text-vcs-deleted">
+                            {t('reset.failed')}: {t(apiErrorKey(reset.error))}
+                        </p>
+                    ) : null}
                     {renderRefs(local, true, true, true, true, false, true)}
                 </Section>
 
