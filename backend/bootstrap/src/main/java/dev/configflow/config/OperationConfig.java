@@ -2,6 +2,7 @@ package dev.configflow.config;
 
 import dev.configflow.application.branch.BranchService;
 import dev.configflow.application.cherrypick.CherryPickService;
+import dev.configflow.application.revert.RevertService;
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.remote.CloneService;
 import dev.configflow.application.remote.RemoteService;
@@ -128,6 +129,12 @@ public class OperationConfig
 	public CherryPickService cherryPickService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
 	{
 		return new CherryPickService(vcsAccess, operationQueue, events);
+	}
+
+	@Bean
+	public RevertService revertService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
+	{
+		return new RevertService(vcsAccess, operationQueue, events);
 	}
 
 	@Bean
