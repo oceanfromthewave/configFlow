@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class GitSshAuthTest {
 
     @Test
-    void buildsATransportConfigCallbackEvenWithNoStoredKeys() {
+    void opensASessionEvenWithNoStoredKeys() {
         GitSshAuth auth = new GitSshAuth(new RemoteCredentialResolver() {
             @Override
             public Optional<Credential> resolve(String host, String protocol) {
@@ -20,29 +20,37 @@ class GitSshAuthTest {
             }
 
             @Override
-            public List<Credential> resolveAll(String protocol) {
+            public List<Credential> resolveAll(String host, String protocol) {
                 return List.of();
             }
         });
 
-        assertNotNull(auth.callback());
+        try (GitSshAuth.Session session = auth.open("github.com")) {
+            assertNotNull(session.callback());
+        }
     }
 
     @Test
     void aMalformedStoredKeyIsSkippedRatherThanFailingConstruction() {
-        // The resolver hands back garbage instead of a real PEM; GitSshAuth must not
-        // throw building the callback since the keys provider is only invoked lazily
-        // per SSH session, not eagerly here.
-        assertDoesNotThrow(() -> new GitSshAuth(new RemoteCredentialResolver() {
+        // The resolver hands back garbage instead of a real PEM; opening a session must
+        // not throw, since the keys provider is only invoked lazily per SSH session, not
+        // eagerly here.
+        RemoteCredentialResolver garbage = new RemoteCredentialResolver() {
             @Override
             public Optional<Credential> resolve(String host, String protocol) {
                 return Optional.empty();
             }
 
             @Override
-            public List<Credential> resolveAll(String protocol) {
+            public List<Credential> resolveAll(String host, String protocol) {
                 return List.of(new Credential("github.com", "ssh", "git", "not a real key".toCharArray()));
             }
-        }));
+        };
+
+        assertDoesNotThrow(() -> {
+            try (GitSshAuth.Session session = new GitSshAuth(garbage).open("github.com")) {
+                assertNotNull(session.callback());
+            }
+        });
     }
 }

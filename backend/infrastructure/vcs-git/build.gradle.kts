@@ -14,6 +14,6 @@ dependencies {
     implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r")
     // Apache MINA sshd reaches Ed25519 only through net.i2p or BouncyCastle — the JDK's
     // own EdDSA is not wired in — and BouncyCastle is the maintained of the two.
-    implementation("org.bouncycastle:bcprov-jdk18on:1.81")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.81")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.84")
 }

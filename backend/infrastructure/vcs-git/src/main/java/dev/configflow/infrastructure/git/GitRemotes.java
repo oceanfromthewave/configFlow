@@ -73,7 +73,7 @@ final class GitRemotes
 		}
 
 		@Override
-		public List<Credential> resolveAll(String protocol)
+		public List<Credential> resolveAll(String host, String protocol)
 		{
 			return List.of();
 		}
@@ -88,8 +88,11 @@ final class GitRemotes
 		{
 			target = requireRemoteUrl(git, remote);
 			cp = credentialsFor(target);
-			git.fetch().setRemote(remote).setRemoveDeletedRefs(request.prune()).setCredentialsProvider(cp)
-					.setTransportConfigCallback(ssh.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call();
+			try(GitSshAuth.Session session = ssh.open(hostOf(target)))
+			{
+				git.fetch().setRemote(remote).setRemoveDeletedRefs(request.prune()).setCredentialsProvider(cp)
+						.setTransportConfigCallback(session.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call();
+			}
 		}
 		catch(GitAPIException e)
 		{
@@ -113,8 +116,12 @@ final class GitRemotes
 		{
 			target = requireRemoteUrl(git, remote);
 			cp = credentialsFor(target);
-			PullResult result = git.pull().setRemote(remote).setRebase(request.strategy() == PullRequest.Strategy.REBASE).setCredentialsProvider(cp)
-					.setTransportConfigCallback(ssh.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call();
+			PullResult result;
+			try(GitSshAuth.Session session = ssh.open(hostOf(target)))
+			{
+				result = git.pull().setRemote(remote).setRebase(request.strategy() == PullRequest.Strategy.REBASE).setCredentialsProvider(cp)
+						.setTransportConfigCallback(session.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call();
+			}
 
 			// A pull that could not integrate is not an exception in JGit: it reports the
 			// conflict in the result and leaves the working tree for the user to fix.
@@ -153,19 +160,22 @@ final class GitRemotes
 		{
 			target = requireRemoteUrl(git, remote);
 			cp = credentialsFor(target);
-			var push = git.push().setRemote(remote).setCredentialsProvider(cp).setTransportConfigCallback(ssh.callback())
-				.setProgressMonitor(new JGitProgressMonitor(monitor));
-			if(request.forceWithLease())
+			try(GitSshAuth.Session session = ssh.open(hostOf(target)))
 			{
-				push.setForce(true).setRefLeaseSpecs(leaseFor(git.getRepository(), remote));
+				var push = git.push().setRemote(remote).setCredentialsProvider(cp).setTransportConfigCallback(session.callback())
+						.setProgressMonitor(new JGitProgressMonitor(monitor));
+				if(request.forceWithLease())
+				{
+					push.setForce(true).setRefLeaseSpecs(leaseFor(git.getRepository(), remote));
+				}
+				if(request.pushTags())
+				{
+					push.setPushTags();
+				}
+				Iterable<PushResult> results = push.call();
+				checkRejections(results);
+				updateTrackingRefs(git.getRepository(), remote, results);
 			}
-			if(request.pushTags())
-			{
-				push.setPushTags();
-			}
-			Iterable<PushResult> results = push.call();
-			checkRejections(results);
-			updateTrackingRefs(git.getRepository(), remote, results);
 		}
 		catch(GitAPIException e)
 		{
@@ -277,8 +287,9 @@ final class GitRemotes
 	RepositoryHandle cloneRepository(CloneRequest request, OperationMonitor monitor)
 	{
 		UsernamePasswordCredentialsProvider cp = credentialsFor(request.url());
-		try(Git git = Git.cloneRepository().setURI(request.url()).setDirectory(request.localPath().toFile()).setCredentialsProvider(cp)
-				.setTransportConfigCallback(ssh.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call())
+		try(GitSshAuth.Session session = ssh.open(hostOf(request.url()));
+				Git git = Git.cloneRepository().setURI(request.url()).setDirectory(request.localPath().toFile()).setCredentialsProvider(cp)
+						.setTransportConfigCallback(session.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call())
 		{
 			return new RepositoryHandle(request.localPath(), VcsType.GIT);
 		}

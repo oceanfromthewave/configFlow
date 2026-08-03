@@ -20,6 +20,13 @@ public final class SshdSshKeyFactory implements SshKeyFactory
 	public SshKeyPair generate(String comment)
 	{
 		String label = comment == null || comment.isBlank() ? "configflow" : comment.trim();
+		// An OpenSSH public key is a single line; whitespace inside the comment (a
+		// newline especially) would make it read as a second authorized_keys entry once
+		// the user pastes it onto a server.
+		if(label.chars().anyMatch(Character::isWhitespace))
+		{
+			throw new IllegalArgumentException("'comment' must not contain whitespace");
+		}
 		try
 		{
 			KeyPair pair = KeyUtils.generateKeyPair(KeyPairProvider.SSH_ED25519, 256);

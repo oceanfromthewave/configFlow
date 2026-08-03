@@ -259,6 +259,7 @@
   "settings.credentials.sshPublicKeyLabel": "공개키",
   "settings.credentials.sshCopy": "복사",
   "settings.credentials.sshCopied": "복사됨",
+  "settings.credentials.sshCopyFailed": "복사하지 못했습니다 — 키를 직접 선택해 복사하세요",
   "authPrompt.title": "인증이 필요합니다",
   "authPrompt.description": "{target} 접근이 거부되었습니다. 자격 증명을 입력하면 저장 후 다시 시도합니다.",
   "authPrompt.submit": "저장 후 재시도",

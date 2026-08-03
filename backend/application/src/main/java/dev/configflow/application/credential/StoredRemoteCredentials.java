@@ -35,9 +35,9 @@ public final class StoredRemoteCredentials implements RemoteCredentialResolver
 	}
 
 	@Override
-	public List<Credential> resolveAll(String protocol)
+	public List<Credential> resolveAll(String host, String protocol)
 	{
-		return refs.findAll().stream().filter(ref -> ref.protocol().equalsIgnoreCase(protocol)).map(ref -> secrets.find(ref.storeKey()))
-				.flatMap(Optional::stream).toList();
+		return refs.findAll().stream().filter(ref -> ref.matches(host, protocol)).map(ref -> secrets.find(ref.storeKey())).flatMap(Optional::stream)
+				.toList();
 	}
 }

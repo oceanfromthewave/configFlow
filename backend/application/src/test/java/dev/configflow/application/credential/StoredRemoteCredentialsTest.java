@@ -65,11 +65,46 @@ class StoredRemoteCredentialsTest {
         assertEquals("key-gone", secrets.askedFor);
     }
 
+    // --- resolveAll --------------------------------------------------------
+
+    @Test
+    void resolveAllOnlyReturnsKeysStoredForTheGivenHostAndProtocol() {
+        CredentialRef githubKey = CredentialRef.issueSshkey("github.com", "git", "key-1", "pub-1", Instant.now());
+        CredentialRef gitlabKey = CredentialRef.issueSshkey("gitlab.com", "git", "key-2", "pub-2", Instant.now());
+        StubRefStore refs = new StubRefStore(Optional.empty(), List.of(githubKey, gitlabKey));
+        StubSecretStore secrets = new StubSecretStore(Optional.empty());
+        secrets.byKey.put("key-1", new Credential("github.com", "ssh", "git", "secret-1".toCharArray()));
+        secrets.byKey.put("key-2", new Credential("gitlab.com", "ssh", "git", "secret-2".toCharArray()));
+
+        List<Credential> resolved =
+                new StoredRemoteCredentials(refs, secrets).resolveAll("github.com", "ssh");
+
+        assertEquals(1, resolved.size());
+        assertArrayEquals("secret-1".toCharArray(), resolved.get(0).secret());
+    }
+
+    @Test
+    void resolveAllDropsARowWhoseSecretIsGone() {
+        // Same rule as resolve(): a reference with no secret behind it is worthless, not
+        // a half-built credential to offer.
+        CredentialRef key = CredentialRef.issueSshkey("github.com", "git", "key-gone", "pub-1", Instant.now());
+        StubRefStore refs = new StubRefStore(Optional.empty(), List.of(key));
+        StubSecretStore secrets = new StubSecretStore(Optional.empty());
+
+        assertTrue(new StoredRemoteCredentials(refs, secrets).resolveAll("github.com", "ssh").isEmpty());
+    }
+
     private static final class StubRefStore implements CredentialRefStore {
         private final Optional<CredentialRef> match;
+        private final List<CredentialRef> all;
 
         StubRefStore(Optional<CredentialRef> match) {
+            this(match, List.of());
+        }
+
+        StubRefStore(Optional<CredentialRef> match, List<CredentialRef> all) {
             this.match = match;
+            this.all = all;
         }
 
         @Override
@@ -94,7 +129,7 @@ class StoredRemoteCredentialsTest {
 
         @Override
         public List<CredentialRef> findAll() {
-            throw new UnsupportedOperationException();
+            return all;
         }
 
         @Override
@@ -105,6 +140,7 @@ class StoredRemoteCredentialsTest {
 
     private static final class StubSecretStore implements CredentialStore {
         private final Optional<Credential> secret;
+        private final java.util.Map<String, Credential> byKey = new java.util.LinkedHashMap<>();
         private String askedFor;
 
         StubSecretStore(Optional<Credential> secret) {
@@ -114,6 +150,10 @@ class StoredRemoteCredentialsTest {
         @Override
         public Optional<Credential> find(String storeKey) {
             this.askedFor = storeKey;
+            if (byKey.containsKey(storeKey)) {
+                Credential c = byKey.get(storeKey);
+                return Optional.of(new Credential(c.host(), c.protocol(), c.username(), c.secret().clone()));
+            }
             // Mirror the real store contract: the secret is the caller's to wipe, so hand back
             // a copy rather than the array this stub keeps.
             return secret.map(c ->
