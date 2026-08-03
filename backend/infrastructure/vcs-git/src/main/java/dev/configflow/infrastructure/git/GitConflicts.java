@@ -121,7 +121,11 @@ final class GitConflicts implements ConflictOperations
 			}
 			if(resolution == ConflictedFile.Resolution.MANUAL)
 			{
-				Files.writeString(repo.localPath().resolve(path), manualContent, StandardCharsets.UTF_8);
+				// The "mine" side may have deleted the path, taking its parent directory
+				// with it if that was the last file there.
+				Path target = repo.localPath().resolve(path);
+				Files.createDirectories(target.getParent());
+				Files.writeString(target, manualContent, StandardCharsets.UTF_8);
 			}
 			else
 			{
