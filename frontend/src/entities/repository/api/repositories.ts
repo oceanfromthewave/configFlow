@@ -8,6 +8,7 @@ import {
 import type {AcceptedOperation} from '@/entities/operation/model/types'
 import type {
     CompareResult,
+    ConflictedFile,
     FileChange,
     FileDiff,
     HistoryFilters,
@@ -15,6 +16,7 @@ import type {
     RefList,
     RepositorySummary,
     StashEntry,
+    ThreeWayContent,
     WorkingTreeStatus,
 } from '@/entities/repository/model/types'
 import {apiFetch, queryKeys} from '@/shared/api'
@@ -627,6 +629,39 @@ export function useUnstageFiles() {
             apiFetch<void>(`/repositories/${repositoryId}/unstage`, {
                 method: 'POST',
                 body: {paths},
+            }),
+        onSuccess: (_result, {repositoryId}) =>
+            invalidateRepository(queryClient, repositoryId),
+    })
+}
+
+/** Base/mine/theirs content of one conflicted file, for the merge editor. */
+export function useConflictContent(repositoryId: string | null, path: string | null) {
+    return useQuery({
+        queryKey: [...queryKeys.conflicts(repositoryId ?? 'none'), path],
+        queryFn: () =>
+            apiFetch<ThreeWayContent>(
+                `/repositories/${repositoryId}/conflicts/content?${new URLSearchParams({path: path ?? ''})}`,
+            ),
+        enabled: repositoryId != null && path != null,
+    })
+}
+
+interface ResolveConflictPayload {
+    repositoryId: string
+    path: string
+    resolution: ConflictedFile['resolution']
+    content?: string
+}
+
+/** Marks one conflict resolved by taking a side or the caller's merged content. */
+export function useResolveConflict() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, path, resolution, content}: ResolveConflictPayload) =>
+            apiFetch<void>(`/repositories/${repositoryId}/conflicts/resolve`, {
+                method: 'POST',
+                body: {path, resolution, content},
             }),
         onSuccess: (_result, {repositoryId}) =>
             invalidateRepository(queryClient, repositoryId),

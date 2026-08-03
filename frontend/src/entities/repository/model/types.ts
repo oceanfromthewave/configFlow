@@ -40,6 +40,14 @@ export interface ConflictedFile {
   resolution: Resolution
 }
 
+/** Base/mine/theirs content of one conflicted file, for the merge editor. A side is
+ * `null` when that side has no content there (e.g. an add/add or delete/modify conflict). */
+export interface ThreeWayContent {
+  base: string | null
+  mine: string | null
+  theirs: string | null
+}
+
 /** Working-tree status as returned by `GET /repositories/{id}/status`. */
 export interface WorkingTreeStatus {
   staged: FileChange[]
