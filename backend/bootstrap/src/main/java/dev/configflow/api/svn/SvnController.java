@@ -9,6 +9,7 @@ import dev.configflow.domain.vcs.model.RemoteEntry;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,6 +29,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/repositories/{id}")
 public class SvnController
 {
+	/** A Windows drive-letter root ({@code C:/} or {@code C:\}), checked regardless of the host OS. */
+	private static final Pattern WINDOWS_ABSOLUTE = Pattern.compile("[A-Za-z]:[/\\\\]");
+
 	private final SvnService svnService;
 
 	public SvnController(SvnService svnService)
@@ -106,7 +110,15 @@ public class SvnController
 		{
 			throw new IllegalArgumentException("A path must not be blank");
 		}
-		Path relative = Path.of(path.trim());
+		String trimmed = path.trim();
+		// Path.isAbsolute() follows the host filesystem, so "C:/etc/passwd" is absolute on
+		// Windows but merely relative on Linux; a server running on Linux would otherwise
+		// let a Windows-style absolute path straight through.
+		if(WINDOWS_ABSOLUTE.matcher(trimmed).lookingAt())
+		{
+			throw new IllegalArgumentException("Path must stay inside the working copy: " + path);
+		}
+		Path relative = Path.of(trimmed);
 		if(relative.isAbsolute() || relative.normalize().startsWith(".."))
 		{
 			throw new IllegalArgumentException("Path must stay inside the working copy: " + path);
