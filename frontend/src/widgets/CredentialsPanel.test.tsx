@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -140,10 +140,13 @@ describe('CredentialsPanel', () => {
     renderPanel()
     await screen.findByText('저장된 자격 증명이 없습니다.')
 
-    await userEvent.type(screen.getByLabelText('호스트'), 'github.com')
-    await userEvent.type(screen.getByLabelText('사용자 이름'), 'alice')
-    await userEvent.type(screen.getByLabelText('비밀번호 / 토큰'), 'tok')
-    await userEvent.click(screen.getByRole('button', { name: '추가' }))
+    // Two forms share label text (host/username), so scope to the credential form's
+    // section — the one with the secret field, which the SSH key form has no equivalent of.
+    const form = screen.getByLabelText('비밀번호 / 토큰').closest('form') as HTMLElement
+    await userEvent.type(within(form).getByLabelText('호스트'), 'github.com')
+    await userEvent.type(within(form).getByLabelText('사용자 이름'), 'alice')
+    await userEvent.type(within(form).getByLabelText('비밀번호 / 토큰'), 'tok')
+    await userEvent.click(within(form).getByRole('button', { name: '추가' }))
 
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0].method).toBe('POST')
@@ -161,14 +164,71 @@ describe('CredentialsPanel', () => {
 
     renderPanel()
 
-    const add = await screen.findByRole('button', { name: '추가' })
+    const form = (await screen.findByLabelText('비밀번호 / 토큰')).closest('form') as HTMLElement
+    const add = within(form).getByRole('button', { name: '추가' })
     expect(add).toBeDisabled()
 
     // Host alone is not enough — a credential with no secret is nothing to store.
-    await userEvent.type(screen.getByLabelText('호스트'), 'github.com')
+    await userEvent.type(within(form).getByLabelText('호스트'), 'github.com')
     expect(add).toBeDisabled()
 
-    await userEvent.type(screen.getByLabelText('비밀번호 / 토큰'), 'tok')
+    await userEvent.type(within(form).getByLabelText('비밀번호 / 토큰'), 'tok')
     expect(add).toBeEnabled()
+  })
+
+  it('generates an SSH key and shows the public half', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        if (method === 'POST' && url.includes('/credentials/ssh-keys')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify(
+                credential({
+                  id: 'cred-ssh',
+                  protocol: 'ssh',
+                  username: 'git',
+                  publicKey: 'ssh-ed25519 AAAA... git@laptop',
+                }),
+              ),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+      }),
+    )
+
+    renderPanel()
+    await screen.findByText('SSH 키')
+
+    const form = screen.getByText('SSH 키').closest('form') as HTMLElement
+    await userEvent.type(within(form).getByLabelText('호스트'), 'github.com')
+    await userEvent.type(within(form).getByLabelText('사용자 이름'), 'git')
+    await userEvent.click(within(form).getByRole('button', { name: '키 생성' }))
+
+    expect(await screen.findByText('ssh-ed25519 AAAA... git@laptop')).toBeInTheDocument()
+  })
+
+  it('shows the public key on an existing SSH credential row', async () => {
+    stubCredentials([
+      credential({
+        id: 'cred-ssh',
+        protocol: 'ssh',
+        username: 'git',
+        publicKey: 'ssh-ed25519 AAAA... git@laptop',
+      }),
+    ])
+
+    renderPanel()
+
+    expect(await screen.findByText('ssh-ed25519 AAAA... git@laptop')).toBeInTheDocument()
   })
 })

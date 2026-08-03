@@ -23,17 +23,18 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 
 	private static final String UPSERT = """
 			INSERT INTO credential_ref
-			  (id, host, protocol, username, store_key, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)
+			  (id, host, protocol, username, store_key, public_key, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 			  host = excluded.host,
 			  protocol = excluded.protocol,
 			  username = excluded.username,
-			  store_key = excluded.store_key
+			  store_key = excluded.store_key,
+			  public_key = excluded.public_key
 			""";
 
 	private static final String SELECT = """
-			SELECT id, host, protocol, username, store_key, created_at
+			SELECT id, host, protocol, username, store_key, public_key, created_at
 			FROM credential_ref
 			""";
 
@@ -54,7 +55,8 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 			ps.setString(3, ref.protocol());
 			ps.setString(4, ref.username());
 			ps.setString(5, ref.storeKey());
-			ps.setString(6, ref.createdAt().toString());
+			ps.setString(6, ref.publicKey());
+			ps.setString(7, ref.createdAt().toString());
 			ps.executeUpdate();
 		}
 		catch(SQLException e)
@@ -144,7 +146,7 @@ public final class SqliteCredentialRefStore implements CredentialRefStore
 	private static CredentialRef map(ResultSet rs) throws SQLException
 	{
 		return new CredentialRef(CredentialId.of(rs.getString("id")), rs.getString("host"), rs.getString("protocol"), rs.getString("username"),
-				rs.getString("store_key"), Instant.parse(rs.getString("created_at")));
+				rs.getString("store_key"), rs.getString("public_key"), Instant.parse(rs.getString("created_at")));
 	}
 
 	@FunctionalInterface

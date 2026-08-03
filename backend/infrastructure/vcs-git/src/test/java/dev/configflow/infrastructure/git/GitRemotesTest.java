@@ -465,6 +465,11 @@ class GitRemotesTest {
             consulted = true;
             return Optional.of(new Credential("github.com", "https", "user", secret));
         }
+
+        @Override
+        public List<Credential> resolveAll(String protocol) {
+            return List.of();
+        }
     }
 
     private static final class RecordingMonitor implements OperationMonitor {

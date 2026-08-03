@@ -1,0 +1,1 @@
+ALTER TABLE credential_ref ADD COLUMN public_key TEXT;

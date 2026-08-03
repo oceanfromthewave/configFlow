@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type {
+  CreateSshKeyPayload,
   Credential,
   SaveCredentialPayload,
 } from '@/entities/credential/model/types'
@@ -25,6 +26,20 @@ export function useSaveCredential() {
   return useMutation({
     mutationFn: (payload: SaveCredentialPayload) =>
       apiFetch<Credential>('/credentials', { method: 'POST', body: payload }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.credentials() }),
+  })
+}
+
+/**
+ * Generates an SSH key for a host and returns it — including the public half, which is
+ * the point: the user needs that line to paste into the server.
+ */
+export function useCreateSshKey() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: CreateSshKeyPayload) =>
+      apiFetch<Credential>('/credentials/ssh-keys', { method: 'POST', body: payload }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.credentials() }),
   })

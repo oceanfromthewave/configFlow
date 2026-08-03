@@ -1,5 +1,6 @@
 package dev.configflow.infrastructure.git;
 
+import dev.configflow.domain.credential.Credential;
 import dev.configflow.domain.credential.RemoteCredentialResolver;
 import dev.configflow.domain.operation.OperationCancelledException;
 import dev.configflow.domain.vcs.exception.MergeConflictException;
@@ -48,17 +49,35 @@ final class GitRemotes
 
 	private final GitRepositoryAccess access;
 	private final RemoteCredentialResolver credentials;
+	private final GitSshAuth ssh;
 
 	GitRemotes(GitRepositoryAccess access)
 	{
-		this(access, (host, protocol) -> Optional.empty());
+		this(access, NO_CREDENTIALS);
 	}
 
 	GitRemotes(GitRepositoryAccess access, RemoteCredentialResolver credentials)
 	{
 		this.access = access;
 		this.credentials = credentials;
+		this.ssh = new GitSshAuth(credentials);
 	}
+
+	/** Stands in when nothing wired a credential source: every lookup comes back empty. */
+	private static final RemoteCredentialResolver NO_CREDENTIALS = new RemoteCredentialResolver()
+	{
+		@Override
+		public Optional<Credential> resolve(String host, String protocol)
+		{
+			return Optional.empty();
+		}
+
+		@Override
+		public List<Credential> resolveAll(String protocol)
+		{
+			return List.of();
+		}
+	};
 
 	void fetch(RepositoryHandle repo, FetchRequest request, OperationMonitor monitor)
 	{
@@ -70,7 +89,7 @@ final class GitRemotes
 			target = requireRemoteUrl(git, remote);
 			cp = credentialsFor(target);
 			git.fetch().setRemote(remote).setRemoveDeletedRefs(request.prune()).setCredentialsProvider(cp)
-					.setProgressMonitor(new JGitProgressMonitor(monitor)).call();
+					.setTransportConfigCallback(ssh.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call();
 		}
 		catch(GitAPIException e)
 		{
@@ -95,7 +114,7 @@ final class GitRemotes
 			target = requireRemoteUrl(git, remote);
 			cp = credentialsFor(target);
 			PullResult result = git.pull().setRemote(remote).setRebase(request.strategy() == PullRequest.Strategy.REBASE).setCredentialsProvider(cp)
-					.setProgressMonitor(new JGitProgressMonitor(monitor)).call();
+					.setTransportConfigCallback(ssh.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call();
 
 			// A pull that could not integrate is not an exception in JGit: it reports the
 			// conflict in the result and leaves the working tree for the user to fix.
@@ -134,7 +153,8 @@ final class GitRemotes
 		{
 			target = requireRemoteUrl(git, remote);
 			cp = credentialsFor(target);
-			var push = git.push().setRemote(remote).setCredentialsProvider(cp).setProgressMonitor(new JGitProgressMonitor(monitor));
+			var push = git.push().setRemote(remote).setCredentialsProvider(cp).setTransportConfigCallback(ssh.callback())
+				.setProgressMonitor(new JGitProgressMonitor(monitor));
 			if(request.forceWithLease())
 			{
 				push.setForce(true).setRefLeaseSpecs(leaseFor(git.getRepository(), remote));
@@ -258,7 +278,7 @@ final class GitRemotes
 	{
 		UsernamePasswordCredentialsProvider cp = credentialsFor(request.url());
 		try(Git git = Git.cloneRepository().setURI(request.url()).setDirectory(request.localPath().toFile()).setCredentialsProvider(cp)
-				.setProgressMonitor(new JGitProgressMonitor(monitor)).call())
+				.setTransportConfigCallback(ssh.callback()).setProgressMonitor(new JGitProgressMonitor(monitor)).call())
 		{
 			return new RepositoryHandle(request.localPath(), VcsType.GIT);
 		}

@@ -5,6 +5,7 @@ import dev.configflow.domain.credential.CredentialRefStore;
 import dev.configflow.domain.credential.CredentialStore;
 import dev.configflow.domain.credential.RemoteCredentialResolver;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -31,5 +32,12 @@ public final class StoredRemoteCredentials implements RemoteCredentialResolver
 	public Optional<Credential> resolve(String host, String protocol)
 	{
 		return refs.findFor(host, protocol).flatMap(ref -> secrets.find(ref.storeKey()));
+	}
+
+	@Override
+	public List<Credential> resolveAll(String protocol)
+	{
+		return refs.findAll().stream().filter(ref -> ref.protocol().equalsIgnoreCase(protocol)).map(ref -> secrets.find(ref.storeKey()))
+				.flatMap(Optional::stream).toList();
 	}
 }

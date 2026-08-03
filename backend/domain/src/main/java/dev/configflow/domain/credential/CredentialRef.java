@@ -13,8 +13,10 @@ import java.util.Objects;
  * 		account name; {@code ""} for token-only auth, never {@code null}
  * @param storeKey
  * 		opaque handle into the OS credential store
+ * @param publicKey
+ * 		openSSH public key line for SSH key, {@code null} for password/token credentials
  */
-public record CredentialRef(CredentialId id, String host, String protocol, String username, String storeKey, Instant createdAt)
+public record CredentialRef(CredentialId id, String host, String protocol, String username, String storeKey, String publicKey, Instant createdAt)
 {
 
 	public CredentialRef
@@ -38,7 +40,13 @@ public record CredentialRef(CredentialId id, String host, String protocol, Strin
 	/** A credential just placed in the OS store. */
 	public static CredentialRef issue(String host, String protocol, String username, String storeKey, Instant now)
 	{
-		return new CredentialRef(CredentialId.newId(), host, protocol, username, storeKey, now);
+		return new CredentialRef(CredentialId.newId(), host, protocol, username, storeKey, null, now);
+	}
+
+	/** An SSH key just generated: the private half is in the OS store, the public half travels in the clear. */
+	public static CredentialRef issueSshkey(String host, String username, String storeKey, String publicKey, Instant now)
+	{
+		return new CredentialRef(CredentialId.newId(), host, "ssh", username, storeKey, publicKey, now);
 	}
 
 	/** True when this credential is the one to use for {@code protocol://host}. */

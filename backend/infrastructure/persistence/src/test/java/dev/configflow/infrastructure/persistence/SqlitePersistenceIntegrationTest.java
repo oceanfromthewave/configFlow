@@ -231,7 +231,7 @@ class SqlitePersistenceIntegrationTest {
 
         // Same id, rotated token: an update, not a fresh registration.
         CredentialRef rotated = new CredentialRef(
-                first.id(), "github.com", "https", "alice", "key-2", NOW.plusSeconds(3600));
+                first.id(), "github.com", "https", "alice", "key-2", null, NOW.plusSeconds(3600));
         store.save(rotated);
 
         CredentialRef stored = store.findById(first.id()).orElseThrow();
@@ -263,6 +263,25 @@ class SqlitePersistenceIntegrationTest {
         store.save(newer);
 
         assertEquals(Optional.of(newer), store.findFor("github.com", "https"));
+    }
+
+    @Test
+    void publicKeyRoundTripsForAnSshCredential() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        CredentialRef sshKey = CredentialRef.issueSshkey("github.com", "git", "key-1", "ssh-ed25519 AAAA... git@laptop", NOW);
+        store.save(sshKey);
+
+        CredentialRef stored = store.findById(sshKey.id()).orElseThrow();
+        assertEquals("ssh-ed25519 AAAA... git@laptop", stored.publicKey());
+    }
+
+    @Test
+    void publicKeyIsNullForNonSshCredentials() {
+        SqliteCredentialRefStore store = new SqliteCredentialRefStore(database);
+        store.save(CredentialRef.issue("github.com", "https", "alice", "key-1", NOW));
+
+        CredentialRef stored = store.findAll().get(0);
+        assertNull(stored.publicKey());
     }
 
     @Test

@@ -10,6 +10,8 @@ export interface Credential {
   protocol: string
   /** Account name; empty for token-only auth. */
   username: string
+  /** OpenSSH public key line for SSH keys; absent for password/token credentials. */
+  publicKey?: string
   createdAt: string
 }
 
@@ -20,4 +22,11 @@ export interface SaveCredentialPayload {
   /** Omitted or empty for token-only auth. */
   username?: string
   secret: string
+}
+
+/** POST body for generating an SSH key. Only `host` is required. */
+export interface CreateSshKeyPayload {
+  host: string
+  username?: string
+  comment?: string
 }
