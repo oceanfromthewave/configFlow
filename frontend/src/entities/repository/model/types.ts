@@ -83,6 +83,11 @@ export interface Revision {
   labels: RefLabel[]
 }
 
+/** Revisions reachable from `target` but not `base`, from `GET /repositories/{id}/compare`. */
+export interface CompareResult {
+  revisions: Revision[]
+}
+
 /** One page of history plus the cursor that fetches the next one. */
 export interface HistoryPage {
   items: Revision[]

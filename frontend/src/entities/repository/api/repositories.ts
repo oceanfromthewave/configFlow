@@ -7,6 +7,7 @@ import {
 
 import type {AcceptedOperation} from '@/entities/operation/model/types'
 import type {
+    CompareResult,
     FileChange,
     FileDiff,
     HistoryFilters,
@@ -300,6 +301,22 @@ export function useHistory(
         initialPageParam: undefined as string | undefined,
         getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
         enabled: repositoryId != null,
+    })
+}
+
+/** Revisions that separate two refs (branches, tags, or revision ids). */
+export function useCompare(
+    repositoryId: string | null,
+    base: string | null,
+    target: string | null,
+) {
+    return useQuery({
+        queryKey: [...queryKeys.history(repositoryId ?? 'none'), 'compare', base, target],
+        queryFn: () =>
+            apiFetch<CompareResult>(
+                `/repositories/${repositoryId}/compare?${new URLSearchParams({base: base ?? '', target: target ?? ''})}`,
+            ),
+        enabled: repositoryId != null && !!base && !!target,
     })
 }
 
