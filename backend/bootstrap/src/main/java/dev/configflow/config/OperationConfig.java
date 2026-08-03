@@ -10,6 +10,7 @@ import dev.configflow.application.remote.RemoteService;
 import dev.configflow.application.repository.RepositoryService;
 import dev.configflow.application.stash.StashService;
 import dev.configflow.application.rebase.RebaseService;
+import dev.configflow.application.svn.SvnService;
 import dev.configflow.application.tag.TagService;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.OperationEvents;
@@ -112,6 +113,12 @@ public class OperationConfig
 	public StashService stashService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
 	{
 		return new StashService(vcsAccess, operationQueue, events);
+	}
+
+	@Bean
+	public SvnService svnService(VcsAccess vcsAccess, OperationQueue operationQueue, OperationEvents events)
+	{
+		return new SvnService(vcsAccess, operationQueue,events);
 	}
 
 	@Bean
