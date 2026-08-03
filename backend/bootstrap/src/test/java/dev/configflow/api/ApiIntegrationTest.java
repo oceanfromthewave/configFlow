@@ -2,6 +2,7 @@ package dev.configflow.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -108,6 +109,44 @@ class ApiIntegrationTest {
                 "/api/v1/settings", HttpMethod.GET, new HttpEntity<>(authHeaders()), Map.class);
         assertEquals(HttpStatus.OK, allResponse.getStatusCode());
         assertEquals("dark", allResponse.getBody().get("theme"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void proxyRoundTripsAndIsRemovable() {
+        // localhost stays on the bypass list for the duration: the proxy this installs is
+        // JVM-wide, and this test talks to the server over localhost.
+        ResponseEntity<Map> putResponse = rest.exchange(
+                "/api/v1/settings/proxy", HttpMethod.PUT,
+                new HttpEntity<>(Map.of("url", "http://proxy.corp:3128", "bypass", "localhost,127.0.0.1"), authHeaders()),
+                Map.class);
+        assertEquals(HttpStatus.OK, putResponse.getStatusCode());
+        assertEquals("http://proxy.corp:3128", putResponse.getBody().get("url"));
+
+        ResponseEntity<Map> getResponse = rest.exchange(
+                "/api/v1/settings/proxy", HttpMethod.GET, new HttpEntity<>(authHeaders()), Map.class);
+        assertEquals("http://proxy.corp:3128", getResponse.getBody().get("url"));
+        assertEquals("localhost,127.0.0.1", getResponse.getBody().get("bypass"));
+
+        ResponseEntity<Map> deleteResponse = rest.exchange(
+                "/api/v1/settings/proxy", HttpMethod.DELETE, new HttpEntity<>(authHeaders()), Map.class);
+        assertEquals(HttpStatus.OK, deleteResponse.getStatusCode());
+
+        // No proxy is a normal state, not a 404.
+        ResponseEntity<Map> afterDelete = rest.exchange(
+                "/api/v1/settings/proxy", HttpMethod.GET, new HttpEntity<>(authHeaders()), Map.class);
+        assertEquals(HttpStatus.OK, afterDelete.getStatusCode());
+        assertNull(afterDelete.getBody().get("url"));
+    }
+
+    @Test
+    void aMalformedProxyUrlIs400() {
+        ResponseEntity<String> response = rest.exchange(
+                "/api/v1/settings/proxy", HttpMethod.PUT,
+                new HttpEntity<>(Map.of("url", "http://proxy.corp", "bypass", ""), authHeaders()),
+                String.class);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
 
     @Test
