@@ -27,5 +27,7 @@ public enum VcsCapability {
     /** Browse the remote repository tree without a working copy (SVN). */
     REMOTE_BROWSE,
     /** Multi-parent history usable for graph rendering. */
-    HISTORY_GRAPH
+    HISTORY_GRAPH,
+    /** Move HEAD (and optionally index/working tree) to a target commit. */
+    RESET
 }

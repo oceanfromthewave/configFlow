@@ -19,6 +19,7 @@ import {
     useMerge,
     usePopStash,
     useRefs,
+    useReset,
     useSaveStash,
     useStartRebase,
     useStashes,
@@ -405,6 +406,7 @@ export function Sidebar() {
     const createTag = useCreateTag()
     const deleteTag = useDeleteTag()
     const startRebase = useStartRebase()
+    const reset = useReset()
 
     const stashes = useStashes(repositoryId)
     const saveStash = useSaveStash()
@@ -623,6 +625,16 @@ export function Sidebar() {
         const upstream = menu.name
         if (!window.confirm(t('rebase.confirm', {upstream}))) return
         startRebase.mutate({repositoryId, upstream})
+        closeMenu()
+    }
+
+    // Only `hard` discards uncommitted work, so only it asks for confirmation;
+    // soft/mixed only move the branch/index and are always safe to undo again.
+    function runReset(mode: 'soft' | 'mixed' | 'hard') {
+        if (menu == null || repositoryId == null) return
+        const target = menu.name
+        if (mode === 'hard' && !window.confirm(t('reset.hardConfirm', {target}))) return
+        reset.mutate({repositoryId, target, mode})
         closeMenu()
     }
 
@@ -980,6 +992,37 @@ export function Sidebar() {
                             >
                                 {t('rebase.onto', {upstream: menu.name})}
                             </button>
+                        ) : null}
+                        {!menu.remote && canMerge ? (
+                            <>
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={reset.isPending}
+                                    onClick={() => runReset('soft')}
+                                    className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {t('reset.soft', {target: menu.name})}
+                                </button>
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={reset.isPending}
+                                    onClick={() => runReset('mixed')}
+                                    className="block w-full px-3 py-1 text-left text-primary/90 outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {t('reset.mixed', {target: menu.name})}
+                                </button>
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={reset.isPending}
+                                    onClick={() => runReset('hard')}
+                                    className="block w-full px-3 py-1 text-left text-vcs-deleted outline-none hover:bg-base focus-visible:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {t('reset.hard', {target: menu.name})}
+                                </button>
+                            </>
                         ) : null}
                         <button
                             ref={menu.remote || !canMerge ? menuItemRef : undefined}

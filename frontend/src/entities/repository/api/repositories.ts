@@ -545,6 +545,29 @@ export function useRevert() {
     })
 }
 
+export interface ResetPayload {
+    repositoryId: string
+    target: string
+    mode: 'soft' | 'mixed' | 'hard'
+}
+
+/**
+ * Moves the current branch to `target`; `mode` decides whether the index and
+ * working tree follow (`hard` discards uncommitted changes without warning).
+ */
+export function useReset() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: ({repositoryId, target, mode}: ResetPayload) =>
+            apiFetch<AcceptedOperation>(`/repositories/${repositoryId}/reset`, {
+                method: 'POST',
+                body: {target, mode},
+            }),
+        onSuccess: () =>
+            queryClient.invalidateQueries({queryKey: queryKeys.operations()}),
+    })
+}
+
 interface PathsPayload {
     repositoryId: string
     paths: string[]
