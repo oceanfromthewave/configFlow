@@ -1,6 +1,7 @@
 package dev.configflow.config;
 
 import dev.configflow.application.credential.CredentialService;
+import dev.configflow.application.settings.ProxyService;
 import dev.configflow.application.settings.SettingsService;
 import dev.configflow.domain.credential.CredentialRefStore;
 import dev.configflow.domain.credential.CredentialStore;
@@ -66,6 +67,17 @@ public class PersistenceConfig
 	public SettingsService settingsService(SettingsStore settingsStore)
 	{
 		return new SettingsService(settingsStore);
+	}
+
+	/**
+	 * Proxy settings. Constructing the bean applies whatever is stored, so the first outbound connection after startup already goes through the proxy.
+	 */
+	@Bean
+	public ProxyService proxyService(SettingsStore settingsStore)
+	{
+		ProxyService service = new ProxyService(settingsStore);
+		service.applyStored();
+		return service;
 	}
 
 	@Bean

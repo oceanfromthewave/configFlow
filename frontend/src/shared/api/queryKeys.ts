@@ -28,6 +28,8 @@ export const queryKeys = {
   operation: (operationId: string) => ['operations', operationId] as const,
 
   credentials: () => ['credentials'] as const,
+
+  proxy: () => ['proxy'] as const,
 }
 
 /** Repository sub-sections that must be refreshed after a VCS operation completes. */
