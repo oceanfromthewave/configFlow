@@ -84,6 +84,44 @@ public final class RemoteService {
     }
 
     /**
+     * SVN update: fetch and integrate in one step, optionally to a specific revision.
+     *
+     * <p>{@code null} means HEAD — the same default as {@code svn update} on the command
+     * line.</p>
+     */
+    public Operation update(RepositoryId id, Long revision) {
+        VcsAccess.Opened<RemoteSyncOperations> opened =
+                access.open(id, RemoteSyncOperations.class);
+
+        return queue.submit(id, OperationType.SVN_UPDATE, context -> {
+            context.log("svn update" + (revision == null ? "" : " -r " + revision),
+                    ConsoleLevel.CMD);
+            opened.operations().update(opened.handle(), revision, monitorFor(context));
+            // An update rewrites the working copy and moves it to a newer revision.
+            events.workingTreeChanged(id);
+            events.refsChanged(id);
+        });
+    }
+
+    /**
+     * SVN cleanup: repairs a working copy left locked by an interrupted operation.
+     *
+     * <p>Local and usually quick, but queued all the same: it is the fix for a working
+     * copy that a previous queued operation broke, and the console output belongs with
+     * it.</p>
+     */
+    public Operation cleanup(RepositoryId id) {
+        VcsAccess.Opened<RemoteSyncOperations> opened =
+                access.open(id, RemoteSyncOperations.class);
+
+        return queue.submit(id, OperationType.SVN_CLEANUP, context -> {
+            context.log("svn cleanup", ConsoleLevel.CMD);
+            opened.operations().cleanup(opened.handle());
+            events.workingTreeChanged(id);
+        });
+    }
+
+    /**
      * Lets the engine report progress and ask whether to stop, both of which the running
      * operation already knows how to answer.
      */

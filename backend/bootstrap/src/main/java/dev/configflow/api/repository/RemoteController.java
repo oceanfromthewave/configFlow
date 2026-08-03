@@ -50,6 +50,10 @@ public class RemoteController {
     public record CloneBody(String url, String localPath, VcsType vcsType, String credentialId) {
     }
 
+    /** POST body for SVN update. {@code revision} is optional; {@code null} means HEAD. */
+    public record UpdateBody(Long revision) {
+    }
+
     private final RemoteService remoteService;
     private final CloneService cloneService;
 
@@ -108,5 +112,21 @@ public class RemoteController {
                 body == null ? null : body.remote(),
                 body != null && Boolean.TRUE.equals(body.forceWithLease()),
                 body != null && Boolean.TRUE.equals(body.tags())));
+    }
+
+    /** SVN's fetch-and-integrate step (docs/07 §5). */
+    @PostMapping("/{id}/svn/update")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AcceptedResponse svnUpdate(
+            @PathVariable String id, @RequestBody(required = false) UpdateBody body) {
+        return AcceptedResponse.from(remoteService.update(
+                RepositoryId.of(id), body == null ? null : body.revision()));
+    }
+
+    /** Repairs a working copy left locked by an interrupted SVN operation. */
+    @PostMapping("/{id}/svn/cleanup")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AcceptedResponse svnCleanup(@PathVariable String id) {
+        return AcceptedResponse.from(remoteService.cleanup(RepositoryId.of(id)));
     }
 }
