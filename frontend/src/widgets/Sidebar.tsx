@@ -678,6 +678,9 @@ export function Sidebar() {
         if (repositoryId == null) {
             return <SectionEmpty>{t('sidebar.noRepository')}</SectionEmpty>
         }
+        // Narrowed to non-null above, but that doesn't survive into the nested
+        // function declaration below — rebind so its closure sees `string`.
+        const repoId = repositoryId
         if (refs.isPending) {
             return (
                 <p className="flex items-center gap-1.5 px-2 py-0.5 text-xs text-muted">
@@ -712,7 +715,7 @@ export function Sidebar() {
                         checkoutLabel={t('branch.checkout')}
                         disabled={checkout.isPending}
                         onCheckout={
-                            checkoutable ? () => checkout.mutate({repositoryId, ref: name}) : undefined
+                            checkoutable ? () => checkout.mutate({repositoryId: repoId, ref: name}) : undefined
                         }
                         onContextMenu={hasMenu ? (event) => onContext(name, event) : undefined}
                         menuOpen={hasMenu && isMenuOpen(name)}
