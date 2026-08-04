@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.configflow.application.vcs.DefaultVcsProviderRegistry;
+import dev.configflow.domain.operation.WorkingTreeWatch;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
@@ -54,7 +55,10 @@ class RepositoryServiceTest {
     private final InMemoryRepositoryStore store = new InMemoryRepositoryStore();
     private final FakeGitProvider provider = new FakeGitProvider();
     private final RepositoryService service = new RepositoryService(
-            store, new DefaultVcsProviderRegistry(List.of(provider)), Clock.fixed(NOW, ZoneOffset.UTC));
+            store,
+            new DefaultVcsProviderRegistry(List.of(provider)),
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            WorkingTreeWatch.noop());
 
     @TempDir
     Path repoDir;
@@ -304,7 +308,8 @@ class RepositoryServiceTest {
         RepositoryService svnService = new RepositoryService(
                 store,
                 new DefaultVcsProviderRegistry(List.of(provider, bare)),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                WorkingTreeWatch.noop());
         RepositoryId id = svnService.register(repoDir).id();
 
         // Bad input outranks a missing capability: the request was malformed either way.
@@ -320,7 +325,8 @@ class RepositoryServiceTest {
         RepositoryService svnService = new RepositoryService(
                 store,
                 new DefaultVcsProviderRegistry(List.of(provider, bare)),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                WorkingTreeWatch.noop());
         RepositoryId id = svnService.register(repoDir).id();
 
         assertThrows(UnsupportedOperationException.class,

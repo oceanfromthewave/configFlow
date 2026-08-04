@@ -1,6 +1,7 @@
 package dev.configflow.application.repository;
 
 import dev.configflow.application.vcs.VcsAccess;
+import dev.configflow.domain.operation.WorkingTreeWatch;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
@@ -27,13 +28,15 @@ public final class RepositoryService
 	private final VcsProviderRegistry providers;
 	private final VcsAccess access;
 	private final Clock clock;
+	private final WorkingTreeWatch watch;
 
-	public RepositoryService(RepositoryStore repositoryStore, VcsProviderRegistry providers, Clock clock)
+	public RepositoryService(RepositoryStore repositoryStore, VcsProviderRegistry providers, Clock clock, WorkingTreeWatch watch)
 	{
 		this.repositoryStore = Objects.requireNonNull(repositoryStore, "repositoryStore");
 		this.providers = Objects.requireNonNull(providers, "providers");
 		this.access = new VcsAccess(repositoryStore, providers);
 		this.clock = Objects.requireNonNull(clock, "clock");
+		this.watch = Objects.requireNonNull(watch, "watch");
 	}
 
 	/**
@@ -54,6 +57,7 @@ public final class RepositoryService
 
 		Repository repository = Repository.register(deriveName(canonical), canonical, null, provider.type(), clock.instant());
 		repositoryStore.save(repository);
+		watch.watch(repository.id(), canonical);
 		return repository;
 	}
 

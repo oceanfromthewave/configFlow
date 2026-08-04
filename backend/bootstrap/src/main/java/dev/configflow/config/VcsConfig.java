@@ -1,11 +1,14 @@
 package dev.configflow.config;
 
+import dev.configflow.api.event.FileSystemWorkingTreeWatch;
 import dev.configflow.application.credential.StoredRemoteCredentials;
 import dev.configflow.application.repository.RepositoryService;
 import dev.configflow.application.vcs.DefaultVcsProviderRegistry;
 import dev.configflow.domain.credential.CredentialRefStore;
 import dev.configflow.domain.credential.CredentialStore;
 import dev.configflow.domain.credential.RemoteCredentialResolver;
+import dev.configflow.domain.operation.OperationEvents;
+import dev.configflow.domain.operation.WorkingTreeWatch;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.port.VcsProvider;
 import dev.configflow.domain.vcs.port.VcsProviderRegistry;
@@ -70,8 +73,16 @@ public class VcsConfig
 	}
 
 	@Bean
-	public RepositoryService repositoryService(RepositoryStore repositoryStore, VcsProviderRegistry providers, Clock clock)
+	public FileSystemWorkingTreeWatch workingTreeWatch(OperationEvents operationEvents, RepositoryStore repositoryStore)
 	{
-		return new RepositoryService(repositoryStore, providers, clock);
+		FileSystemWorkingTreeWatch watch = new FileSystemWorkingTreeWatch(operationEvents);
+		repositoryStore.findAll().forEach(repository -> watch.watch(repository.id(), repository.localPath()));
+		return watch;
+	}
+
+	@Bean
+	public RepositoryService repositoryService(RepositoryStore repositoryStore, VcsProviderRegistry providers, Clock clock, WorkingTreeWatch watch)
+	{
+		return new RepositoryService(repositoryStore, providers, clock, watch);
 	}
 }
