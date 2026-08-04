@@ -186,7 +186,21 @@ class CloneServiceTest {
     void clone_intoTheSameTargetRunsOneAtATime() throws Exception {
         ExecutorService pool = Executors.newCachedThreadPool();
         try {
-            CloneService service = serviceOn(pool, provider);
+            // Without this gate, a pool thread can run and finish the first queued clone
+            // before the request thread submits the second/third — their pre-check would
+            // then see a non-empty directory and throw synchronously instead of getting
+            // queued as a FAILED operation, flaking the assertions below.
+            CountDownLatch allSubmitted = new CountDownLatch(1);
+            Executor gated = task -> pool.execute(() -> {
+                try {
+                    allSubmitted.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                task.run();
+            });
+            CloneService service = serviceOn(gated, provider);
             Path target = root.resolve("contested");
             events.completions = new CountDownLatch(3);
 
@@ -197,6 +211,7 @@ class CloneServiceTest {
             for (int i = 0; i < 3; i++) {
                 submitted.add(service.clone("https://host/o/repo.git", target, VcsType.GIT, null));
             }
+            allSubmitted.countDown();
 
             assertTrue(events.completions.await(10, TimeUnit.SECONDS));
             assertEquals(1, provider.peakConcurrent.get(),
