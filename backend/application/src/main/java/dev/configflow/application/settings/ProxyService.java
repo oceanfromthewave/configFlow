@@ -63,7 +63,9 @@ public final class ProxyService
 					}
 					catch(IllegalArgumentException e)
 					{
-						log.log(Level.WARNING, "Stored proxy setting is invalid, falling back to no proxy: " + e.getMessage());
+						// Not e.getMessage(): ProxySettings.parse() echoes the raw URL back into its
+						// exception message, and a corrupted row could still carry user:pass@.
+						log.log(Level.WARNING, "Stored proxy setting is invalid; falling back to no proxy.");
 						return Optional.empty();
 					}
 				});
