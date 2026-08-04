@@ -291,6 +291,7 @@ export function WorkingTreePanel() {
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
     const selectedFile = useUiStore((s) => s.selectedFile)
     const selectFile = useUiStore((s) => s.selectFile)
+    const requestConfirm = useUiStore((s) => s.requestConfirm)
     const status = useWorkingTreeStatus(repositoryId)
     const stageFiles = useStageFiles()
     const unstageFiles = useUnstageFiles()
@@ -447,8 +448,8 @@ export function WorkingTreePanel() {
                             size="sm"
                             variant="ghost"
                             disabled={rebaseBusy}
-                            onClick={() => {
-                                if (window.confirm(t('rebase.skipConfirm'))) skipRebase.mutate({repositoryId})
+                            onClick={async () => {
+                                if (await requestConfirm(t('rebase.skipConfirm'))) skipRebase.mutate({repositoryId})
                             }}
                         >
                             {t('rebase.skip')}
@@ -457,8 +458,8 @@ export function WorkingTreePanel() {
                             size="sm"
                             variant="ghost"
                             disabled={rebaseBusy}
-                            onClick={() => {
-                                if (window.confirm(t('rebase.abortConfirm'))) abortRebase.mutate({repositoryId})
+                            onClick={async () => {
+                                if (await requestConfirm(t('rebase.abortConfirm'))) abortRebase.mutate({repositoryId})
                             }}
                         >
                             {t('rebase.abort')}
