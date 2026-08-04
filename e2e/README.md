@@ -10,10 +10,17 @@ built frontend, same as a user would get.
 Build the three pieces the app needs at runtime (there's no watch/dev mode
 here — this exercises the production load path, `file://` + spawned jar):
 
+Run each from its own directory:
+
 ```powershell
-backend: .\gradlew.bat :bootstrap:bootJar
-frontend: npm run build
-desktop: npm run build
+# backend/
+.\gradlew.bat :bootstrap:bootJar
+
+# frontend/
+npm run build
+
+# desktop/
+npm run build
 ```
 
 `tests/golden-path.spec.ts` checks for these on startup and fails with a

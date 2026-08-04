@@ -63,7 +63,7 @@ test('init a repo, stage and commit a file, see it in history', async () => {
         CONFIGFLOW_DB_PATH: path.join(scratch, 'configflow.db'),
         // backend-launcher.ts falls back to `java` on PATH otherwise, which
         // this shell doesn't necessarily have set up.
-        CONFIGFLOW_JAVA_HOME: process.env.JAVA_HOME ?? process.env.CONFIGFLOW_JAVA_HOME ?? '',
+        CONFIGFLOW_JAVA_HOME: process.env.CONFIGFLOW_JAVA_HOME ?? process.env.JAVA_HOME ?? '',
       },
     })
     const window = await app.firstWindow()

@@ -129,11 +129,20 @@ npm run dev
 
 ## Packaging (M5)
 
+Run each from its own directory:
+
 ```powershell
-backend: .\gradlew.bat :bootstrap:bootJar
-frontend: npm run build
-installer: .\build-jre.ps1     # jlink; module list measured via jdeps, see the script header
-desktop: npm run package       # tsc + electron-builder -> release/ConfigFlow Setup <version>.exe
+# backend/
+.\gradlew.bat :bootstrap:bootJar
+
+# frontend/
+npm run build
+
+# installer/
+.\build-jre.ps1     # jlink; module list measured via jdeps, see the script header
+
+# desktop/
+npm run package     # tsc + electron-builder -> release/ConfigFlow Setup <version>.exe
 ```
 
 `electron-builder.yml` bundles all three: the frontend `dist/` into the
