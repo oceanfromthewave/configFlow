@@ -190,6 +190,7 @@ export function HistoryPanel() {
     const t = useT()
     const {locale} = useI18n()
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
+    const requestConfirm = useUiStore((s) => s.requestConfirm)
 
     // Draft vs applied: typing must not refire the query on every keystroke.
     const [draft, setDraft] = useState<HistoryFilters>({author: '', message: '', branch: ''})
@@ -264,18 +265,18 @@ export function HistoryPanel() {
         setCommitMenu({revisionId, ...position})
     }
 
-    function runCherryPick() {
+    async function runCherryPick() {
         if (commitMenu == null || repositoryId == null) return
         const {revisionId} = commitMenu
-        if (!window.confirm(t('cherryPick.confirm'))) return
+        if (!(await requestConfirm(t('cherryPick.confirm')))) return
         cherryPick.mutate({repositoryId, revisions: [revisionId]})
         closeCommitMenu()
     }
 
-    function runRevert() {
+    async function runRevert() {
         if (commitMenu == null || repositoryId == null) return
         const {revisionId} = commitMenu
-        if (!window.confirm(t('revert.confirm'))) return
+        if (!(await requestConfirm(t('revert.confirm')))) return
         revert.mutate({repositoryId, revisions: [revisionId]})
         closeCommitMenu()
     }
