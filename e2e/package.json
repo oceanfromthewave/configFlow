@@ -1,0 +1,12 @@
+{
+  "name": "configflow-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright E2E driving the packaged Electron shell end to end (docs/03 architecture table).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
