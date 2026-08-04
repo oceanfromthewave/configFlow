@@ -1,7 +1,8 @@
 # electron-builder configuration (M5).
 # Before packaging: run `backend/gradlew.bat :bootstrap:bootJar`,
 # `frontend: npm run build`, and `installer/build-jre.ps1` (jlink) so the
-# extraResources/files sources below exist. Icons/signing still TODO.
+# extraResources/files sources below exist. Code signing still TODO (needs a
+# purchased cert — see desktop/README.md).
 
 appId: dev.configflow.app
 productName: ConfigFlow
@@ -33,7 +34,7 @@ extraResources:
 win:
   target:
     - nsis
-  # TODO(M5): icon: ../installer/icons/configflow.ico
+  icon: ../installer/icons/configflow.ico
 
 nsis:
   oneClick: false
