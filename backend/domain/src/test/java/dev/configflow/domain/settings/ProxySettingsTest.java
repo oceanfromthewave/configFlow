@@ -44,6 +44,28 @@ class ProxySettingsTest {
     }
 
     @Test
+    void rejectsAPortAboveTheValidRange() {
+        assertThrows(IllegalArgumentException.class, () -> ProxySettings.parse("http://proxy.corp:99999", ""));
+    }
+
+    @Test
+    void rejectsEmbeddedCredentials() {
+        assertThrows(IllegalArgumentException.class, () -> ProxySettings.parse("http://user:pass@proxy.corp:3128", ""));
+    }
+
+    @Test
+    void theCanonicalConstructorRejectsAnInvalidSchemeEvenOutsideParse() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ProxySettings("ftp", "proxy.corp", 21, List.of()));
+    }
+
+    @Test
+    void theCanonicalConstructorRejectsAnOutOfRangePortEvenOutsideParse() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ProxySettings("http", "proxy.corp", 70000, List.of()));
+    }
+
+    @Test
     void bypassMatchesAnExactHostCaseInsensitively() {
         ProxySettings proxy = ProxySettings.parse("http://proxy.corp:3128", "Localhost");
 

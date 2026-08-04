@@ -1,5 +1,7 @@
 package dev.configflow.domain.settings;
 
+import java.net.URI;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -14,6 +16,18 @@ public record ProxySettings(String scheme, String host, int port, List<String> b
 	{
 		Objects.requireNonNull(scheme, "scheme must not be null");
 		Objects.requireNonNull(host, "host must not be null");
+		if(!scheme.equals("http") && !scheme.equals("https") && !scheme.equals("socks"))
+		{
+			throw new IllegalArgumentException("Proxy scheme must be http, https or socks: " + scheme);
+		}
+		if(host.isBlank())
+		{
+			throw new IllegalArgumentException("Proxy host must not be blank");
+		}
+		if(port <= 0 || port > 65535)
+		{
+			throw new IllegalArgumentException("Proxy port out of range: " + port);
+		}
 		bypass = List.copyOf(Objects.requireNonNull(bypass, "bypass must not be null"));
 	}
 
@@ -26,20 +40,20 @@ public record ProxySettings(String scheme, String host, int port, List<String> b
 	 */
 	public static ProxySettings parse(String url, String bypass)
 	{
-		java.net.URI uri;
+		URI uri;
 		try
 		{
-			uri = new java.net.URI(url.trim());
+			uri = new URI(url.trim());
 		}
 		catch(Exception e)
 		{
 			throw new IllegalArgumentException("Proxy URL is malformed: " + url, e);
 		}
-		String scheme = uri.getScheme() == null ? "http" : uri.getScheme().toLowerCase(Locale.ROOT);
-		if(!scheme.equals("http") && !scheme.equals("https") && !scheme.equals("socks"))
+		if(uri.getUserInfo() != null)
 		{
-			throw new IllegalArgumentException("Proxy scheme must be http, https or socks: " + scheme);
+			throw new IllegalArgumentException("Proxy URL must not contain credentials: " + url);
 		}
+		String scheme = uri.getScheme() == null ? "http" : uri.getScheme().toLowerCase(Locale.ROOT);
 		if(uri.getHost() == null || uri.getHost().isBlank())
 		{
 			throw new IllegalArgumentException("Proxy URL must contain a host: " + url);
@@ -59,7 +73,7 @@ public record ProxySettings(String scheme, String host, int port, List<String> b
 		{
 			return List.of();
 		}
-		return java.util.Arrays.stream(bypass.split(",")).map(String::trim).filter(entry -> !entry.isEmpty()).toList();
+		return Arrays.stream(bypass.split(",")).map(String::trim).filter(entry -> !entry.isEmpty()).toList();
 	}
 
 	/** Whether {@code host} should be reached directly rather than through the proxy. */
