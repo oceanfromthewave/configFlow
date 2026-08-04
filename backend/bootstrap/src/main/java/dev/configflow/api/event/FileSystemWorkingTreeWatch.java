@@ -38,6 +38,8 @@ public final class FileSystemWorkingTreeWatch implements WorkingTreeWatch, AutoC
 	private final OperationEvents events;
 	private final WatchService service;
 	private final Map<WatchKey, RepositoryId> watched = new ConcurrentHashMap<>();
+	/** Repositories still wanted. Cancelling keys is not enough: events already queued outlive it. */
+	private final Set<RepositoryId> active = ConcurrentHashMap.newKeySet();
 	private final Thread poller;
 	private volatile boolean running = true;
 
@@ -59,9 +61,16 @@ public final class FileSystemWorkingTreeWatch implements WorkingTreeWatch, AutoC
 	public void watch(RepositoryId id, Path localPath)
 	{
 		Objects.requireNonNull(id, "id");
+		active.add(id);
+		register(id, localPath);
+	}
+
+	/** Registration without claiming the repository, so a late event cannot revive an unwatched one. */
+	private void register(RepositoryId id, Path root)
+	{
 		try
 		{
-			registerTree(id, localPath);
+			registerTree(id, root);
 		}
 		catch(IOException e)
 		{
@@ -73,6 +82,7 @@ public final class FileSystemWorkingTreeWatch implements WorkingTreeWatch, AutoC
 	@Override
 	public void unwatch(RepositoryId id)
 	{
+		active.remove(id);
 		watched.entrySet().removeIf(entry -> {
 			if(!entry.getValue().equals(id))
 			{
@@ -115,12 +125,13 @@ public final class FileSystemWorkingTreeWatch implements WorkingTreeWatch, AutoC
 				WatchKey key = pending.isEmpty() ? service.take() : service.poll(DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS);
 				if(key == null)
 				{
-					pending.forEach(events::workingTreeChanged);
+					// Anything unwatched while the burst settled is no longer ours to report.
+					pending.stream().filter(active::contains).forEach(events::workingTreeChanged);
 					pending.clear();
 					continue;
 				}
 				RepositoryId id = watched.get(key);
-				if(id != null && drain(id, key))
+				if(id != null && active.contains(id) && drain(id, key))
 				{
 					pending.add(id);
 				}
@@ -162,7 +173,7 @@ public final class FileSystemWorkingTreeWatch implements WorkingTreeWatch, AutoC
 			Path child = dir.resolve(name);
 			if(event.kind() == ENTRY_CREATE && Files.isDirectory(child))
 			{
-				watch(id, child);
+				register(id, child);
 			}
 		}
 		return changed;
