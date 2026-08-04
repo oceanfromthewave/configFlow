@@ -7,6 +7,10 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Electron loads the built index.html via `file://`, where absolute
+  // asset paths (Vite's default, meant for a web server root) resolve
+  // against the filesystem root instead of index.html's directory.
+  base: './',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

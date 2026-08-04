@@ -127,9 +127,26 @@ $env:CONFIGFLOW_TOKEN = 'dev-token-matching-the-backend'
 npm run dev
 ```
 
-## Packaging (M5 — not wired yet)
+## Packaging (M5)
 
-`electron-builder.yml` is a skeleton: appId `dev.configflow.app`, NSIS
-target, commented `extraResources` placeholders for the backend jar and a
-jlink-generated JRE. electron-builder itself is intentionally not a
-dependency yet.
+Run each from its own directory:
+
+```powershell
+# backend/
+.\gradlew.bat :bootstrap:bootJar
+
+# frontend/
+npm run build
+
+# installer/
+.\build-jre.ps1     # jlink; module list measured via jdeps, see the script header
+
+# desktop/
+npm run package     # tsc + electron-builder -> release/ConfigFlow Setup <version>.exe
+```
+
+`electron-builder.yml` bundles all three: the frontend `dist/` into the
+app (`files`), the backend fat jar and the jlinked JRE into `extraResources`
+(resolved at runtime the same way as the dev/unpackaged paths above — see
+`backend-launcher.ts`). Icons and code signing are still open (need project
+assets/decisions, not just config).
