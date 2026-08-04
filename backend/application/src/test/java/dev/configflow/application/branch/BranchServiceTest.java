@@ -11,6 +11,7 @@ import dev.configflow.domain.operation.Operation;
 import dev.configflow.domain.operation.OperationEvents;
 import dev.configflow.domain.operation.OperationHistoryStore;
 import dev.configflow.domain.operation.OperationId;
+import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
 import dev.configflow.domain.repository.Repository;
@@ -44,6 +45,7 @@ class BranchServiceTest {
     private final InMemoryRepositoryStore store = new InMemoryRepositoryStore();
     private final FakeBranchProvider provider = new FakeBranchProvider();
     private final NoHistory history = new NoHistory();
+    private final RecordingEvents events = new RecordingEvents();
 
     @TempDir
     Path repoDir;
@@ -52,7 +54,7 @@ class BranchServiceTest {
         VcsAccess access = new VcsAccess(store, new DefaultVcsProviderRegistry(List.of(providers)));
         OperationQueue queue = new OperationQueue(
                 history, OperationEvents.noop(), Clock.fixed(NOW, ZoneOffset.UTC), Runnable::run);
-        return new BranchService(access, queue, OperationEvents.noop());
+        return new BranchService(access, queue, events);
     }
 
     private RepositoryId register() {
@@ -217,7 +219,54 @@ class BranchServiceTest {
         assertEquals(OperationState.FAILED, history.saved.get(operation.id()).state());
     }
 
+    @Test
+    void merge_publishesBothChangeEventsEvenWhenTheMergeConflicts() {
+        // 충돌한 머지는 HEAD를 그대로 두더라도 워킹 트리를 충돌 상태로 남긴다. 패널이 보여줘야
+        // 하는 것이 바로 그 상태이므로, 실패한 경우에도 갱신 알림은 나가야 한다.
+        provider.failWith = new MergeConflictException(List.of(Path.of("app.txt")));
+        BranchService service = serviceFor(provider);
+        RepositoryId id = register();
+
+        service.merge(id, "feature/x", false, false);
+
+        assertEquals(List.of(id), events.refsChanged);
+        assertEquals(List.of(id), events.workingTreeChanged);
+    }
+
     // --- fakes -----------------------------------------------------------
+
+    private static final class RecordingEvents implements OperationEvents {
+
+        private final List<RepositoryId> refsChanged = new ArrayList<>();
+        private final List<RepositoryId> workingTreeChanged = new ArrayList<>();
+
+        @Override
+        public void progress(OperationId id, OperationProgress value) {
+        }
+
+        @Override
+        public void completed(Operation operation) {
+        }
+
+        @Override
+        public void consoleLine(
+                RepositoryId repositoryId, OperationId id, String line, String level) {
+        }
+
+        @Override
+        public void refsChanged(RepositoryId repositoryId) {
+            refsChanged.add(repositoryId);
+        }
+
+        @Override
+        public void workingTreeChanged(RepositoryId repositoryId) {
+            workingTreeChanged.add(repositoryId);
+        }
+
+        @Override
+        public void repositoryRegistered(RepositoryId repositoryId) {
+        }
+    }
 
     private static final class FakeBranchProvider implements VcsProvider, BranchOperations {
 

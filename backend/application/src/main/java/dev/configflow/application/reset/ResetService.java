@@ -1,5 +1,6 @@
 package dev.configflow.application.reset;
 
+import dev.configflow.application.operation.ChangeNotice;
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.ConsoleLevel;
@@ -49,19 +50,9 @@ public final class ResetService
 			}
 			finally
 			{
-				// A hard reset rewrites the working tree and every mode moves the branch, so
-				// both panels are stale afterwards — including when the reset failed partway.
-				try
-				{
-					events.refsChanged(id);
-					events.workingTreeChanged(id);
-				}
-				catch(RuntimeException ignored)
-				{
-					// A finally block that throws replaces the reset's own exception, so the
-					// user would see "notification failed" instead of why the reset failed.
-					// The refresh is best-effort; the outcome is not.
-				}
+				// hard 리셋은 워킹 트리를 다시 쓰고, 어떤 모드든 브랜치를 옮긴다. 따라서 이후 두
+				// 패널 모두 오래된 상태가 된다 — 리셋이 도중에 실패한 경우에도 마찬가지다.
+				ChangeNotice.refsAndWorkingTree(events, id);
 			}
 		});
 	}
