@@ -14,6 +14,7 @@ import dev.configflow.domain.operation.OperationId;
 import dev.configflow.domain.operation.OperationProgress;
 import dev.configflow.domain.operation.OperationState;
 import dev.configflow.domain.operation.OperationType;
+import dev.configflow.domain.operation.WorkingTreeWatch;
 import dev.configflow.domain.repository.Repository;
 import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
@@ -67,7 +68,7 @@ class CloneServiceTest {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         return new CloneService(
                 registry,
-                new RepositoryService(store, registry, clock),
+                new RepositoryService(store, registry, clock, WorkingTreeWatch.noop()),
                 new OperationQueue(history, events, clock, executor),
                 events);
     }
