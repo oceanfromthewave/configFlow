@@ -1,5 +1,6 @@
 package dev.configflow.application.rebase;
 
+import dev.configflow.application.operation.ChangeNotice;
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.ConsoleLevel;
@@ -66,12 +67,18 @@ public final class RebaseService
 		return queue.submit(id, OperationType.REBASE, context -> {
 			context.log(command, ConsoleLevel.CMD);
 			context.throwIfCancelled();
-			action.accept(opened.operations(), opened.handle());
-			// A rebase rewrites HEAD and replays commits over the working tree, so
-			// nothing cached about this repository survives — abort included, since
-			// it restores the pre-rebase state.
-			events.refsChanged(id);
-			events.workingTreeChanged(id);
+			try
+			{
+				action.accept(opened.operations(), opened.handle());
+			}
+			finally
+			{
+				// 리베이스는 HEAD를 다시 쓰고 커밋들을 워킹 트리 위로 재적용하므로, 이 리포지토리에
+				// 대해 캐시된 것은 아무것도 살아남지 않는다 — abort도 마찬가지다. 리베이스 이전
+				// 상태로 되돌리기 때문이다. 충돌로 멈춘 경우에도 이미 재적용된 커밋과 충돌 파일이
+				// 남으므로 알림은 어느 쪽이든 나가야 한다.
+				ChangeNotice.refsAndWorkingTree(events, id);
+			}
 		});
 	}
 }

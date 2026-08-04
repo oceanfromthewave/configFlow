@@ -21,6 +21,7 @@ import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.port.RebaseOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
+import dev.configflow.domain.vcs.exception.MergeConflictException;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -70,6 +71,20 @@ class RebaseServiceTest {
         assertEquals(OperationType.REBASE, operation.type());
         assertEquals(List.of("start:main"), provider.calls);
         // A rebase moves HEAD *and* rewrites the working tree, unlike a tag.
+        assertEquals(List.of(id), events.refsChanged);
+        assertEquals(List.of(id), events.workingTreeChanged);
+    }
+
+    @Test
+    void start_publishesBothChangeEventsEvenWhenTheRebaseStopsOnConflicts() {
+        // 충돌로 멈춘 리베이스는 그 지점까지의 커밋을 이미 재적용해 놓고 워킹 트리를 충돌 상태로
+        // 남긴다. 실패한 경우가 오히려 화면 갱신이 필요한 경우다.
+        provider.failWith = new MergeConflictException(List.of(Path.of("app.txt")));
+        RebaseService service = service();
+        RepositoryId id = register();
+
+        service.start(id, "main");
+
         assertEquals(List.of(id), events.refsChanged);
         assertEquals(List.of(id), events.workingTreeChanged);
     }
@@ -146,6 +161,7 @@ class RebaseServiceTest {
     private static final class FakeRebaseProvider implements VcsProvider, RebaseOperations {
 
         private final List<String> calls = new ArrayList<>();
+        private RuntimeException failWith;
 
         @Override
         public VcsType type() {
@@ -170,6 +186,9 @@ class RebaseServiceTest {
         @Override
         public void start(RepositoryHandle repo, String upstream) {
             calls.add("start:" + upstream);
+            if (failWith != null) {
+                throw failWith;
+            }
         }
 
         @Override

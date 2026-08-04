@@ -28,6 +28,7 @@ import dev.configflow.domain.vcs.model.VcsType;
 import dev.configflow.domain.vcs.port.OperationMonitor;
 import dev.configflow.domain.vcs.port.RemoteSyncOperations;
 import dev.configflow.domain.vcs.port.VcsProvider;
+import dev.configflow.domain.vcs.exception.MergeConflictException;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -133,6 +134,20 @@ class RemoteServiceTest {
 
     @Test
     void pull_announcesBothRefsAndWorkingTree() {
+        RemoteService service = serviceFor(provider);
+        RepositoryId id = register();
+
+        service.pull(id, null, PullRequest.Strategy.MERGE);
+
+        assertEquals(List.of(id), events.refsChanged);
+        assertEquals(List.of(id), events.workingTreeChanged);
+    }
+
+    @Test
+    void pull_announcesBothEvenWhenTheIntegrationConflicts() {
+        // pull은 ref를 먼저 받아온 뒤 통합한다. 통합이 충돌해도 ref는 이미 움직였고 워킹 트리는
+        // 충돌 상태로 남으므로, 실패한 경우가 오히려 갱신이 필요한 경우다.
+        provider.failWith = new MergeConflictException(List.of(Path.of("app.txt")));
         RemoteService service = serviceFor(provider);
         RepositoryId id = register();
 

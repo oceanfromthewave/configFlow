@@ -1,5 +1,6 @@
 package dev.configflow.application.remote;
 
+import dev.configflow.application.operation.ChangeNotice;
 import dev.configflow.application.operation.OperationContext;
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.vcs.VcsAccess;
@@ -60,9 +61,13 @@ public final class RemoteService {
             context.log("pull " + describe(request.remote())
                     + (request.strategy() == PullRequest.Strategy.REBASE ? " --rebase" : ""),
                     ConsoleLevel.CMD);
-            opened.operations().pull(opened.handle(), request, monitorFor(context));
-            events.refsChanged(id);
-            events.workingTreeChanged(id);
+            try {
+                opened.operations().pull(opened.handle(), request, monitorFor(context));
+            } finally {
+                // pull은 ref를 먼저 받아온 뒤 통합한다. 통합이 충돌로 실패해도 ref는 이미 움직였고
+                // 워킹 트리는 충돌 상태로 남으므로, 실패한 경우가 오히려 갱신이 필요한 경우다.
+                ChangeNotice.refsAndWorkingTree(events, id);
+            }
         });
     }
 

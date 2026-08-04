@@ -1,5 +1,6 @@
 package dev.configflow.application.branch;
 
+import dev.configflow.application.operation.ChangeNotice;
 import dev.configflow.application.operation.OperationQueue;
 import dev.configflow.application.vcs.VcsAccess;
 import dev.configflow.domain.operation.ConsoleLevel;
@@ -102,11 +103,16 @@ public final class BranchService
 		return queue.submit(id, OperationType.MERGE, context -> {
 			context.log("merge " + ref + (fastForwardOnly ? " --ff-only" : "") + (squash ? " --squash" : ""), ConsoleLevel.CMD);
 			context.throwIfCancelled();
-			opened.operations().merge(opened.handle(), request);
-			// A merge advances HEAD and rewrites the working tree (or leaves it
-			// conflicted), so nothing cached about this repository survives.
-			events.refsChanged(id);
-			events.workingTreeChanged(id);
+			try
+			{
+				opened.operations().merge(opened.handle(), request);
+			}
+			finally
+			{
+				// 머지는 HEAD를 전진시키고 워킹 트리를 다시 쓴다 — 또는 충돌 상태로 남긴다.
+				// 충돌로 실패한 경우가 바로 화면이 갱신돼야 하는 경우이므로, 어느 쪽이든 알린다.
+				ChangeNotice.refsAndWorkingTree(events, id);
+			}
 		});
 	}
 

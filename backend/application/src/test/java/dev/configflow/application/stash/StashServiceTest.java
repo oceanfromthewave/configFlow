@@ -19,6 +19,7 @@ import dev.configflow.domain.repository.RepositoryId;
 import dev.configflow.domain.repository.RepositoryStore;
 import dev.configflow.domain.vcs.capability.VcsCapability;
 import dev.configflow.domain.vcs.exception.StashDropAfterApplyException;
+import dev.configflow.domain.vcs.exception.VcsPreconditionException;
 import dev.configflow.domain.vcs.model.RepositoryHandle;
 import dev.configflow.domain.vcs.model.StashEntry;
 import dev.configflow.domain.vcs.model.VcsType;
@@ -87,6 +88,20 @@ class StashServiceTest {
     }
 
     @Test
+    void apply_publishesWorkingTreeChangedEvenWhenTheApplyConflicts() {
+        // 충돌한 apply는 스태시 내용을 이미 워킹 트리에 올려놓은 상태로 실패한다. 그 충돌이
+        // 화면에 보여야 하므로 알림은 실패한 경우에도 나가야 한다.
+        StashService service = service();
+        RepositoryId id = register();
+        provider.applyFailure = new VcsPreconditionException("local changes conflict with the stash");
+
+        Operation operation = service.apply(id, 0);
+
+        assertEquals(OperationState.FAILED, operation.state());
+        assertEquals(List.of(id), events.workingTreeChanged);
+    }
+
+    @Test
     void apply_pop_drop_rejectNegativeIndexWithoutQueueingAnything() {
         StashService service = service();
         RepositoryId id = register();
@@ -103,6 +118,7 @@ class StashServiceTest {
     private static final class FakeStashProvider implements VcsProvider, StashOperations {
 
         private final List<String> calls = new ArrayList<>();
+        private RuntimeException applyFailure;
         private RuntimeException popFailure;
 
         @Override
@@ -138,6 +154,9 @@ class StashServiceTest {
         @Override
         public void apply(RepositoryHandle repo, int index) {
             calls.add("apply:" + index);
+            if (applyFailure != null) {
+                throw applyFailure;
+            }
         }
 
         @Override
