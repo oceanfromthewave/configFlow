@@ -37,6 +37,13 @@ reviews:
       instructions: >
         domain 모듈은 순수 Java여야 한다. Spring, JGit, SVNKit 등 프레임워크/엔진 타입에
         의존하면 지적하라. 모델은 불변(record) 우선.
+    - path: "backend/application/**/*.java"
+      instructions: >
+        application 모듈도 순수 Java여야 한다. Spring 애너테이션/타입(@Service, @Component,
+        @Autowired 등), JGit/SVNKit, slf4j에 의존하면 지적하라. 의존성은 생성자 주입으로만
+        받고, 객체 배선은 bootstrap의 Composition Root(config 패키지)에서만 한다. 로깅이
+        필요하면 JDK의 System.Logger를 쓴다. 유스케이스는 도메인 포트에만 의존해야 하며,
+        클라이언트가 보낸 값(경로, ref, 페이지 크기)은 포트를 열기 전에 검증하라.
     - path: "backend/infrastructure/**/*.java"
       instructions: >
         인프라 어댑터는 엔진(JGit/SVNKit) 예외를 경계에서 반드시 번역해야 한다. 엔진 예외가
@@ -49,9 +56,21 @@ reviews:
         (2)와 구분해서 다뤄야 한다. (2)~(4)를 VcsException으로 감싸면 사용자 실수나 미지원
         기능이 500으로 보고되므로 오히려 잘못이다.
         자원(Git/Repository 등 AutoCloseable)은 try-with-resources로 닫는지 확인하라.
+    - path: "backend/bootstrap/**/*.java"
+      instructions: >
+        Spring이 허용되는 유일한 모듈이다. 배선은 config 패키지의 @Bean에서 명시적인 new로
+        하고, 도메인/애플리케이션 타입에 컴포넌트 스캔용 애너테이션을 붙이지 마라.
+        컨트롤러는 얇아야 한다. 예외를 직접 HTTP 상태로 번역하지 말고 ApiExceptionHandler에
+        맡기고, 요청/응답 DTO는 record로 두고 도메인 모델을 그대로 노출하지 마라.
+        OperationEvents 구현과 SSE 어댑터는 워커 스레드에서 호출되므로 thread-safe해야 하고
+        예외를 밖으로 던지면 안 된다(끊긴 클라이언트가 작업을 실패시키면 안 된다).
+        백그라운드 스레드를 만들면 데몬으로 만들고 종료 경로(close/@PreDestroy)를 확인하라.
     - path: "frontend/src/**/*.{ts,tsx}"
       instructions: >
         Feature-Sliced 구조를 따르는지, 사용자 노출 문자열이 i18n을 거치는지 확인하라.
+        서버 상태는 TanStack Query로 다루고 쿼리 키는 shared/api/queryKeys.ts 팩토리를
+        거쳐야 한다. 백그라운드 refetch가 사용자가 입력 중인 폼 상태를 덮어쓰지 않는지,
+        로딩/에러 상태를 처리하는지 확인하라.
 
 chat:
   auto_reply: true
