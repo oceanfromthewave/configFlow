@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/shared/i18n'
 import { useUiStore } from '@/shared/lib/uiStore'
+import { ConfirmModal } from '@/widgets/ConfirmModal'
 import { HistoryPanel } from '@/widgets/HistoryPanel'
 
 function renderPanel() {
@@ -15,6 +16,7 @@ function renderPanel() {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <HistoryPanel />
+        <ConfirmModal />
       </I18nProvider>
     </QueryClientProvider>,
   )
@@ -208,11 +210,11 @@ describe('HistoryPanel', () => {
 
   it('cherry-picks a commit onto the current branch from its context menu', async () => {
     const calls = stubHistoryAndPost([revision('abc1234567890abc1234', 'feat: topic commit')])
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderPanel()
     fireEvent.contextMenu(await screen.findByText('feat: topic commit'))
     await userEvent.click(await screen.findByRole('menuitem', { name: '체리픽' }))
+    await userEvent.click(await screen.findByRole('button', { name: '확인' }))
 
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0].url).toContain('/repositories/repo-1/cherry-pick')
@@ -221,11 +223,11 @@ describe('HistoryPanel', () => {
 
   it('reports a failed cherry-pick with a translated message', async () => {
     stubHistoryAndPost([revision('abc1234567890abc1234', 'feat: topic commit')], 409)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderPanel()
     fireEvent.contextMenu(await screen.findByText('feat: topic commit'))
     await userEvent.click(await screen.findByRole('menuitem', { name: '체리픽' }))
+    await userEvent.click(await screen.findByRole('button', { name: '확인' }))
 
     expect(await screen.findByText(/체리픽하지 못했습니다/)).toBeInTheDocument()
   })

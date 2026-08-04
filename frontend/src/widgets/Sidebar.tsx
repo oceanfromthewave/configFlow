@@ -398,6 +398,7 @@ function StashItem({
 export function Sidebar() {
     const t = useT()
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
+    const requestConfirm = useUiStore((s) => s.requestConfirm)
     const refs = useRefs(repositoryId)
     const checkout = useCheckout()
     const merge = useMerge()
@@ -603,11 +604,11 @@ export function Sidebar() {
         closeStashMenu()
     }
 
-    function runDropStash() {
+    async function runDropStash() {
         if (stashMenu == null || repositoryId == null) return
         const {entry} = stashMenu
         const label = entry.message.trim() !== '' ? entry.message : `stash@{${entry.index}}`
-        if (!window.confirm(t('stash.dropConfirm', {message: label}))) return
+        if (!(await requestConfirm(t('stash.dropConfirm', {message: label})))) return
         dropStash.mutate({repositoryId, index: entry.index})
         closeStashMenu()
     }
@@ -620,20 +621,20 @@ export function Sidebar() {
 
     // Rebasing rewrites the current branch's commits, so it asks first — unlike
     // merge, which only adds to history.
-    function runRebase() {
+    async function runRebase() {
         if (menu == null || repositoryId == null) return
         const upstream = menu.name
-        if (!window.confirm(t('rebase.confirm', {upstream}))) return
+        if (!(await requestConfirm(t('rebase.confirm', {upstream})))) return
         startRebase.mutate({repositoryId, upstream})
         closeMenu()
     }
 
     // Only `hard` discards uncommitted work, so only it asks for confirmation;
     // soft/mixed only move the branch/index and are always safe to undo again.
-    function runReset(mode: 'soft' | 'mixed' | 'hard') {
+    async function runReset(mode: 'soft' | 'mixed' | 'hard') {
         if (menu == null || repositoryId == null) return
         const target = menu.name
-        if (mode === 'hard' && !window.confirm(t('reset.hardConfirm', {target}))) return
+        if (mode === 'hard' && !(await requestConfirm(t('reset.hardConfirm', {target})))) return
         reset.mutate({repositoryId, target, mode})
         closeMenu()
     }
@@ -641,18 +642,18 @@ export function Sidebar() {
     // Shift-click force-deletes (skips the "not fully merged" guard). A plain
     // click still asks for confirmation either way — deleting a branch is not
     // undoable from this UI.
-    function runDelete(force: boolean) {
+    async function runDelete(force: boolean) {
         if (menu == null || repositoryId == null) return
         const {name, remote} = menu
-        if (!window.confirm(t('branch.deleteConfirm', {name}))) return
+        if (!(await requestConfirm(t('branch.deleteConfirm', {name})))) return
         deleteBranch.mutate({repositoryId, name, remote, force})
         closeMenu()
     }
 
-    function runDeleteTag() {
+    async function runDeleteTag() {
         if (tagMenu == null || repositoryId == null) return
         const {name} = tagMenu
-        if (!window.confirm(t('tag.deleteConfirm', {name}))) return
+        if (!(await requestConfirm(t('tag.deleteConfirm', {name})))) return
         deleteTag.mutate({repositoryId, name})
         closeTagMenu()
     }
