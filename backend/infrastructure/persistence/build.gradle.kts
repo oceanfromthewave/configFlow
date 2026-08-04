@@ -8,6 +8,6 @@ plugins {
 
 dependencies {
     implementation(project(":domain"))
-    implementation("org.xerial:sqlite-jdbc:3.46.1.3")
-    implementation("org.flywaydb:flyway-core:10.20.1")
+    implementation("org.xerial:sqlite-jdbc:3.53.2.1")
+    implementation("org.flywaydb:flyway-core:13.1.0")
 }
