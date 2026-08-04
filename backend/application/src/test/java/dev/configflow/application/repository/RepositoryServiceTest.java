@@ -54,11 +54,12 @@ class RepositoryServiceTest {
 
     private final InMemoryRepositoryStore store = new InMemoryRepositoryStore();
     private final FakeGitProvider provider = new FakeGitProvider();
+    private final RecordingWatch watch = new RecordingWatch();
     private final RepositoryService service = new RepositoryService(
             store,
             new DefaultVcsProviderRegistry(List.of(provider)),
             Clock.fixed(NOW, ZoneOffset.UTC),
-            WorkingTreeWatch.noop());
+            watch);
 
     @TempDir
     Path repoDir;
@@ -72,6 +73,25 @@ class RepositoryServiceTest {
         assertEquals(repoDir.toAbsolutePath().normalize(), repo.localPath());
         assertEquals(NOW, repo.createdAt());
         assertTrue(store.findById(repo.id()).isPresent());
+    }
+
+    @Test
+    void register_startsWatchingTheWorkingCopy() {
+        Repository repo = service.register(repoDir);
+
+        assertEquals(List.of(repo.id()), watch.watched);
+        assertEquals(List.of(repoDir.toAbsolutePath().normalize()), watch.paths);
+        // Watching a repository the store does not know about yet would leave the UI
+        // refreshing something it cannot look up.
+        assertTrue(watch.storedWhenWatched);
+    }
+
+    @Test
+    void register_doesNotWatchAPathItRejected() {
+        provider.detects = false;
+
+        assertThrows(IllegalArgumentException.class, () -> service.register(repoDir));
+        assertTrue(watch.watched.isEmpty());
     }
 
     @Test
@@ -334,6 +354,25 @@ class RepositoryServiceTest {
     }
 
     // --- fakes: hand-written test doubles of the domain ports ------------
+
+    /** Inner, not static: it checks the store as it is at the moment of the call. */
+    private final class RecordingWatch implements WorkingTreeWatch {
+        private final List<RepositoryId> watched = new ArrayList<>();
+        private final List<Path> paths = new ArrayList<>();
+        private boolean storedWhenWatched;
+
+        @Override
+        public void watch(RepositoryId id, Path localPath) {
+            watched.add(id);
+            paths.add(localPath);
+            storedWhenWatched = store.findById(id).isPresent();
+        }
+
+        @Override
+        public void unwatch(RepositoryId id) {
+            watched.remove(id);
+        }
+    }
 
     private static final class InMemoryRepositoryStore implements RepositoryStore {
         private final Map<RepositoryId, Repository> byId = new LinkedHashMap<>();

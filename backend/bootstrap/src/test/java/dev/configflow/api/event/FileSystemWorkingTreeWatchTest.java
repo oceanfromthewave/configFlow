@@ -93,6 +93,18 @@ class FileSystemWorkingTreeWatchTest {
         assertNull(events.changed.poll(2, TimeUnit.SECONDS));
     }
 
+    @Test
+    void dropsChangesThatWereStillDebouncingWhenUnwatchArrived() throws Exception {
+        watch.watch(id, workingCopy);
+
+        // Cancelling the keys cannot recall an event the poller already holds; only the
+        // repository no longer being watched can.
+        Files.writeString(workingCopy.resolve("README.md"), "hello");
+        watch.unwatch(id);
+
+        assertNull(events.changed.poll(2, TimeUnit.SECONDS));
+    }
+
     private RepositoryId awaitChange() throws InterruptedException {
         return events.changed.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
