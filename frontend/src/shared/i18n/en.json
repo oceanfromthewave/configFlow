@@ -277,6 +277,8 @@
   "settings.proxy.removeFailed": "Could not remove the proxy settings",
   "settings.proxy.notConfigured": "No proxy is configured. Connections go direct.",
   "settings.proxy.active": "Active",
+  "confirmDialog.cancel": "Cancel",
+  "confirmDialog.confirm": "Confirm",
   "authPrompt.title": "Authentication required",
   "authPrompt.description": "{target} rejected the request. Enter credentials to save and retry.",
   "authPrompt.submit": "Save and retry",

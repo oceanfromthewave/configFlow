@@ -37,6 +37,12 @@ export interface AuthPrompt {
   protocol: string
 }
 
+/** A pending confirmation prompt, awaiting the user's yes/no via the modal. */
+export interface ConfirmRequest {
+  message: string
+  resolve: (confirmed: boolean) => void
+}
+
 interface UiState {
   route: AppRoute
   setRoute: (route: AppRoute) => void
@@ -67,6 +73,16 @@ interface UiState {
   authPrompts: AuthPrompt[]
   promptForAuth: (prompt: AuthPrompt) => void
   dismissAuthPrompt: () => void
+
+  /**
+   * Destructive-action confirmation, replacing `window.confirm` (which
+   * Electron renders inconsistently and blocks the renderer thread). One slot
+   * is enough — these are always triggered by a direct user click, so two
+   * can't be in flight at once.
+   */
+  confirm: ConfirmRequest | null
+  requestConfirm: (message: string) => Promise<boolean>
+  resolveConfirm: (confirmed: boolean) => void
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -105,4 +121,13 @@ export const useUiStore = create<UiState>()((set) => ({
     ),
   dismissAuthPrompt: () =>
     set((state) => ({ authPrompts: state.authPrompts.slice(1) })),
+
+  confirm: null,
+  requestConfirm: (message) =>
+    new Promise<boolean>((resolve) => set({ confirm: { message, resolve } })),
+  resolveConfirm: (confirmed) =>
+    set((state) => {
+      state.confirm?.resolve(confirmed)
+      return { confirm: null }
+    }),
 }))

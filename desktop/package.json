@@ -8,11 +8,13 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsc && electron . --dev",
-    "start": "tsc && electron ."
+    "start": "tsc && electron .",
+    "package": "tsc && electron-builder --config electron-builder.yml"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
-    "electron": "^39.8.5",
-    "typescript": "^5.8.0"
+    "@types/node": "^24.0.0",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2"
   }
 }
