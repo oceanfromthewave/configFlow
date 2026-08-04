@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { useDeleteProxy, useProxySettings, useSaveProxy } from '@/entities/proxy/api/proxy'
@@ -19,12 +19,24 @@ export function ProxyPanel() {
   const [bypass, setBypass] = useState('')
 
   // The form mirrors whatever is stored; re-sync whenever the query resolves or changes
-  // underneath us (e.g. after a successful delete).
+  // underneath us (e.g. after a successful delete). Skipped once the fields diverge from
+  // the last synced values — otherwise a background refetch (window refocus, reconnect)
+  // clobbers input the user hasn't saved yet.
+  const lastSynced = useRef<{ url: string; bypass: string } | null>(null)
   useEffect(() => {
-    if (proxy.data) {
-      setUrl(proxy.data.url ?? '')
-      setBypass(proxy.data.bypass)
+    if (!proxy.data) return
+    const nextUrl = proxy.data.url ?? ''
+    const nextBypass = proxy.data.bypass
+    const pristine =
+      lastSynced.current === null ||
+      (url === lastSynced.current.url && bypass === lastSynced.current.bypass)
+    if (pristine) {
+      setUrl(nextUrl)
+      setBypass(nextBypass)
     }
+    lastSynced.current = { url: nextUrl, bypass: nextBypass }
+    // Only the server value should drive re-sync decisions — including url/bypass here
+    // would re-run on every keystroke and defeat the guard.
   }, [proxy.data])
 
   const canSubmit = url.trim() !== '' && !save.isPending

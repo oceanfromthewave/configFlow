@@ -10,13 +10,14 @@ function renderPanel() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ProxyPanel />
       </I18nProvider>
     </QueryClientProvider>,
   )
+  return { ...result, queryClient }
 }
 
 interface RecordedCall {
@@ -116,6 +117,23 @@ describe('ProxyPanel', () => {
 
     await userEvent.type(screen.getByLabelText('프록시 URL'), 'http://proxy.corp:3128')
     expect(save).toBeEnabled()
+  })
+
+  it('keeps in-progress edits when a background refetch returns the same stored value', async () => {
+    stubProxy({ url: 'http://proxy.corp:3128', bypass: '' })
+
+    const { queryClient } = renderPanel()
+    await screen.findByText('http://proxy.corp:3128')
+
+    const urlField = screen.getByLabelText('프록시 URL')
+    await userEvent.clear(urlField)
+    await userEvent.type(urlField, 'http://not-saved-yet.corp:8080')
+
+    // A window refocus or reconnect triggers exactly this: the same query re-runs and
+    // resolves to the same server value, but must not stomp the user's unsaved edit.
+    await queryClient.refetchQueries({ queryKey: ['proxy'] })
+
+    expect(screen.getByLabelText('프록시 URL')).toHaveValue('http://not-saved-yet.corp:8080')
   })
 
   it('surfaces a translated error when loading fails', async () => {

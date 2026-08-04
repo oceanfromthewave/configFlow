@@ -129,6 +129,14 @@ class ProxyServiceTest {
     }
 
     @Test
+    void aCorruptedStoredValueFallsBackToNoProxyInsteadOfThrowing() {
+        // Simulates a hand-edited database row, not a value ever written by update().
+        store.put(ProxyService.URL_KEY, "not a valid proxy url");
+
+        assertTrue(service.current().isEmpty());
+    }
+
+    @Test
     void aMalformedUrlIsRejectedBeforeAnythingIsStored() {
         assertThrows(IllegalArgumentException.class, () -> service.update("http://proxy.corp", ""));
 
