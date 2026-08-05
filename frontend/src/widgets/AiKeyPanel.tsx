@@ -32,13 +32,15 @@ export function AiKeyPanel() {
   const [key, setKey] = useState('')
 
   const existing = credentials.data?.find(isAiKeyCredential)
-  const canSubmit = key.trim() !== '' && !save.isPending
+  // Save and delete hit the same credential row; letting both run at once races.
+  const busy = save.isPending || del.isPending
+  const canSubmit = key.trim() !== '' && !busy
 
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!canSubmit) return
     save.mutate(
-      { host: AI_KEY_HOST, protocol: AI_KEY_PROTOCOL, username: AI_KEY_USERNAME, secret: key },
+      { host: AI_KEY_HOST, protocol: AI_KEY_PROTOCOL, username: AI_KEY_USERNAME, secret: key.trim() },
       { onSuccess: () => setKey('') },
     )
   }
@@ -95,7 +97,7 @@ export function AiKeyPanel() {
               <Button
                 type="button"
                 variant="ghost"
-                disabled={del.isPending}
+                disabled={busy}
                 onClick={() => del.mutate(existing.id)}
               >
                 {del.isPending ? t('settings.aiKey.removing') : t('settings.aiKey.remove')}
