@@ -1,4 +1,4 @@
-# jlink로 백엔드 실행에 필요한 최소 JRE를 installer/jre에 생성한다.
+﻿# jlink로 백엔드 실행에 필요한 최소 JRE를 installer/jre에 생성한다.
 #
 # 모듈 목록은 추측이 아니라 실측: bootstrap fat jar를 jarmode=tools로 추출한 뒤
 # jdeps --recursive --print-module-deps로 뽑았다(2026-08-05, Spring Boot 4.0.7/JDK 21
