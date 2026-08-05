@@ -2,6 +2,7 @@ import {useState, type FormEvent, type KeyboardEvent} from 'react'
 
 import {
     useCommit,
+    useGenerateCommitMessage,
     useWorkingTreeStatus,
 } from '@/entities/repository/api/repositories'
 import {useT} from '@/shared/i18n'
@@ -15,6 +16,7 @@ export function CommitBox() {
     const repositoryId = useUiStore((s) => s.currentRepositoryId)
     const status = useWorkingTreeStatus(repositoryId)
     const commit = useCommit()
+    const generate = useGenerateCommitMessage()
 
     const [message, setMessage] = useState('')
     const [amend, setAmend] = useState(false)
@@ -45,6 +47,17 @@ export function CommitBox() {
                 },
             },
         )
+    }
+
+    // The provider only sees staged changes, so there is nothing to describe
+    // until something is staged.
+    const canGenerate = stagedCount > 0 && !generate.isPending
+
+    function generateMessage() {
+        if (!canGenerate) return
+        generate.mutate(repositoryId!, {
+            onSuccess: (result) => setMessage(result.message),
+        })
     }
 
     function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -80,9 +93,23 @@ export function CommitBox() {
                     {t('commit.amend')}
                 </label>
 
-                <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
-                    {commit.isPending ? t('commit.committing') : t('commit.submit')}
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={generateMessage}
+                        disabled={!canGenerate}
+                    >
+                        {generate.isPending
+                            ? t('commit.generating')
+                            : t('commit.generate')}
+                    </Button>
+
+                    <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+                        {commit.isPending ? t('commit.committing') : t('commit.submit')}
+                    </Button>
+                </div>
             </div>
 
             {blockedByConflicts ? (
@@ -91,6 +118,12 @@ export function CommitBox() {
                 </p>
             ) : !hasSomethingToCommit ? (
                 <p className="text-xs text-muted">{t('commit.nothingStaged')}</p>
+            ) : null}
+
+            {generate.isError ? (
+                <p className="text-xs text-vcs-deleted">
+                    {t('commit.generateFailed')}: {t(apiErrorKey(generate.error))}
+                </p>
             ) : null}
 
             {commit.isError ? (
