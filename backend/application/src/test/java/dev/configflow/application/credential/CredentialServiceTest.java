@@ -152,6 +152,35 @@ class CredentialServiceTest {
         assertThrows(NoSuchElementException.class, () -> service.delete(CredentialId.newId()));
     }
 
+    // --- secretFor ---------------------------------------------------------
+
+    @Test
+    void secretForReturnsTheStoredSecretForARegisteredTarget() {
+        service.save("api.anthropic.com", "https", "", "sk-ant-key".toCharArray());
+
+        Optional<char[]> secret = service.secretFor("api.anthropic.com", "https", "");
+
+        assertTrue(secret.isPresent());
+        assertArrayEquals("sk-ant-key".toCharArray(), secret.get());
+    }
+
+    @Test
+    void secretForNormalizesCaseAndWhitespaceLikeSaveDoes() {
+        service.save("Api.Anthropic.com", "HTTPS", "", "sk-ant-key".toCharArray());
+
+        // save() lowercases host/protocol and trims username; a lookup with different
+        // casing or padding must resolve to the same row, not silently miss it.
+        Optional<char[]> secret = service.secretFor(" api.anthropic.com ", " HTTPS ", " ");
+
+        assertTrue(secret.isPresent());
+        assertArrayEquals("sk-ant-key".toCharArray(), secret.get());
+    }
+
+    @Test
+    void secretForIsEmptyWhenNothingIsRegisteredForTheTarget() {
+        assertTrue(service.secretFor("api.anthropic.com", "https", "").isEmpty());
+    }
+
     @Test
     void listReturnsEveryRegisteredCredential() {
         service.save("github.com", "https", "alice", "a".toCharArray());

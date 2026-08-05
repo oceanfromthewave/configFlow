@@ -1,4 +1,5 @@
 import { useT } from '@/shared/i18n'
+import { AiKeyPanel } from '@/widgets/AiKeyPanel'
 import { CredentialsPanel } from '@/widgets/CredentialsPanel'
 import { ProxyPanel } from '@/widgets/ProxyPanel'
 
@@ -11,6 +12,7 @@ export function SettingsPage() {
       <h1 className="text-lg font-semibold text-primary">{t('settings.title')}</h1>
       <CredentialsPanel />
       <ProxyPanel />
+      <AiKeyPanel />
     </div>
   )
 }

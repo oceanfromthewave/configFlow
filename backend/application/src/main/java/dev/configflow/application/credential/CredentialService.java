@@ -134,6 +134,12 @@ public final class CredentialService
 		return refs.findAll();
 	}
 
+	public Optional<char[]> secretFor(String host, String protocol, String username)
+	{
+		return refs.findByTarget(host.trim().toLowerCase(), protocol.trim().toLowerCase(), username == null ? "" : username.trim())
+				.flatMap(ref -> secrets.find(ref.storeKey())).map(Credential::secret);
+	}
+
 	/**
 	 * Removes a credential from both stores.
 	 *

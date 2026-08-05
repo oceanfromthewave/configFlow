@@ -10,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -48,12 +49,12 @@ public final class ClaudeAiProvider implements AiProvider
 
 	private final HttpClient http;
 	private final ObjectMapper mapper;
-	private final String apiKey;
+	private final Supplier<String> apiKey;
 	private final String model;
 
-	public ClaudeAiProvider(String apiKey, String model)
+	public ClaudeAiProvider(Supplier<String> apiKey, String model)
 	{
-		this.apiKey = requireText(apiKey, "apiKey");
+		this.apiKey = Objects.requireNonNull(apiKey, "apiKey must not be null");
 		this.model = requireText(model, "model");
 		this.http = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
 		this.mapper = JsonMapper.builder().build();
@@ -68,7 +69,13 @@ public final class ClaudeAiProvider implements AiProvider
 	@Override
 	public Set<AiFeature> supportedFeatures()
 	{
-		return Set.of(AiFeature.COMMIT_MESSAGE);
+		return hasKey() ? Set.of(AiFeature.COMMIT_MESSAGE) : Set.of();
+	}
+
+	private boolean hasKey()
+	{
+		String key = apiKey.get();
+		return key != null && !key.isBlank();
 	}
 
 	@Override
@@ -125,7 +132,14 @@ public final class ClaudeAiProvider implements AiProvider
 
 	private String send(String body)
 	{
-		HttpRequest request = HttpRequest.newBuilder(MESSAGES_ENDPOINT).timeout(REQUEST_TIMEOUT).header("x-api-key", apiKey)
+		String key = apiKey.get();
+		if(key == null || key.isBlank())
+		{
+			// supportedFeatures()로 이미 걸러지지만, 그 확인과 이 호출 사이에 키가 삭제될 수 있다.
+			throw new AiProviderException(AiProviderException.Reason.AUTH, "Claude API 키가 설정되지 않았습니다");
+		}
+
+		HttpRequest request = HttpRequest.newBuilder(MESSAGES_ENDPOINT).timeout(REQUEST_TIMEOUT).header("x-api-key", key)
 				.header("anthropic-version", ANTHROPIC_VERSION).header("content-type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body))
 				.build();
 
