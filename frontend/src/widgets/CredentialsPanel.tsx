@@ -7,6 +7,7 @@ import {
   useDeleteCredential,
   useSaveCredential,
 } from '@/entities/credential/api/credentials'
+import { isAiKeyCredential } from '@/entities/credential/model/aiKeyTarget'
 import type { Credential } from '@/entities/credential/model/types'
 import { useT } from '@/shared/i18n'
 import { apiErrorKey } from '@/shared/lib/apiErrorMessage'
@@ -277,6 +278,9 @@ function AddCredentialForm() {
 export function CredentialsPanel() {
   const t = useT()
   const credentials = useCredentials()
+  // The AI key rides the same credential row shape but has its own panel; keep it out
+  // of this list so it isn't shown twice or deletable from the wrong place.
+  const rows = credentials.data?.filter((c) => !isAiKeyCredential(c))
 
   return (
     <section className="flex flex-col gap-4">
@@ -301,11 +305,11 @@ export function CredentialsPanel() {
         <p className="text-xs text-vcs-deleted">
           {t('settings.credentials.loadFailed')}: {t(apiErrorKey(credentials.error))}
         </p>
-      ) : credentials.data.length === 0 ? (
+      ) : rows && rows.length === 0 ? (
         <p className="text-xs text-muted">{t('settings.credentials.empty')}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {credentials.data.map((credential) => (
+          {rows?.map((credential) => (
             <CredentialRow key={credential.id} credential={credential} />
           ))}
         </ul>
