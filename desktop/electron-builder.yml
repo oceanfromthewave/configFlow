@@ -1,11 +1,15 @@
 # electron-builder configuration (M5).
-# Before packaging: run `backend/gradlew.bat :bootstrap:bootJar`,
-# `frontend: npm run build`, and `installer/build-jre.ps1` (jlink) so the
-# extraResources/files sources below exist. Code signing still TODO (needs a
-# purchased cert — see desktop/README.md).
+# 패키징 전에 `npm run release`가 백엔드 jar·프론트 dist·jlink JRE를 먼저 만든다
+# (아래 files/extraResources가 그 산출물을 참조한다). 코드 서명은 인증서 구매 전까지
+# 보류 — desktop/README.md 참고.
 
 appId: dev.configflow.app
 productName: ConfigFlow
+
+# 이미 devDependency로 받아둔 Electron을 그대로 쓴다. 기본 동작(배포본을 새로 받아
+# win-unpacked.tmp에 푼 뒤 rename)은 갓 풀린 electron.exe를 백신이 잡고 있으면
+# EPERM으로 실패한다.
+electronDist: node_modules/electron/dist
 
 directories:
   output: release
