@@ -31,7 +31,7 @@ export function RepositoryPage() {
                 <CenterPanel />
               </Pane>
               <SplitHandle direction="vertical" />
-              <Pane id="diff" defaultSize={32} minSize="220px">
+              <Pane id="diff" defaultSize="32%" minSize="220px">
                 <DiffPanel />
               </Pane>
             </SplitPane>
@@ -40,7 +40,8 @@ export function RepositoryPage() {
           {!bottomCollapsed && (
             <>
               <SplitHandle direction="horizontal" />
-              <Pane id="bottom" defaultSize="200px" minSize="120px" maxSize={60}>
+              {/* 숫자는 px로 해석되므로 퍼센트는 반드시 "%"를 붙인다(라이브러리 v4 규칙). */}
+              <Pane id="bottom" defaultSize="200px" minSize="120px" maxSize="60%">
                 <BottomPanel />
               </Pane>
             </>
