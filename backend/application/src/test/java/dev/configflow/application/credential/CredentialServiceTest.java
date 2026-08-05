@@ -182,6 +182,16 @@ class CredentialServiceTest {
     }
 
     @Test
+    void secretForRejectsANullOrBlankHostOrProtocol() {
+        // Left unvalidated, blank/null would just look like "nothing registered" —
+        // indistinguishable from a caller bug.
+        assertThrows(IllegalArgumentException.class, () -> service.secretFor(null, "https", ""));
+        assertThrows(IllegalArgumentException.class, () -> service.secretFor(" ", "https", ""));
+        assertThrows(IllegalArgumentException.class, () -> service.secretFor("api.anthropic.com", null, ""));
+        assertThrows(IllegalArgumentException.class, () -> service.secretFor("api.anthropic.com", " ", ""));
+    }
+
+    @Test
     void listReturnsEveryRegisteredCredential() {
         service.save("github.com", "https", "alice", "a".toCharArray());
         service.save("gitlab.com", "https", "bob", "b".toCharArray());

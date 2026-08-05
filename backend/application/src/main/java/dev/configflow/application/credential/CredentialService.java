@@ -9,11 +9,7 @@ import dev.configflow.domain.credential.SshKeyFactory;
 import dev.configflow.domain.credential.SshKeyPair;
 
 import java.time.Clock;
-import java.util.Arrays;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Use case: registering, listing and removing credentials.
@@ -136,7 +132,15 @@ public final class CredentialService
 
 	public Optional<char[]> secretFor(String host, String protocol, String username)
 	{
-		return refs.findByTarget(host.trim().toLowerCase(), protocol.trim().toLowerCase(), username == null ? "" : username.trim())
+		if(host == null || host.isBlank())
+		{
+			throw new IllegalArgumentException("'host' must not be blank");
+		}
+		if(protocol == null || protocol.isBlank())
+		{
+			throw new IllegalArgumentException("'protocol' must not be blank");
+		}
+		return refs.findByTarget(host.trim().toLowerCase(Locale.ROOT), protocol.trim().toLowerCase(Locale.ROOT), username == null ? "" : username.trim())
 				.flatMap(ref -> secrets.find(ref.storeKey())).map(Credential::secret);
 	}
 
