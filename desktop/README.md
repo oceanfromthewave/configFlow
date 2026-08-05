@@ -148,5 +148,7 @@ npm run package     # tsc + electron-builder -> release/ConfigFlow Setup <versio
 `electron-builder.yml` bundles all three: the frontend `dist/` into the
 app (`files`), the backend fat jar and the jlinked JRE into `extraResources`
 (resolved at runtime the same way as the dev/unpackaged paths above — see
-`backend-launcher.ts`). Icons and code signing are still open (need project
-assets/decisions, not just config).
+`backend-launcher.ts`). The Windows icon is `../installer/icons/configflow.ico`
+(wired via `win.icon`). Code signing is still open — needs a purchased
+certificate; unsigned installs still work, just with a Windows SmartScreen
+warning.
