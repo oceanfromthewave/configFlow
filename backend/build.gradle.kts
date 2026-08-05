@@ -6,7 +6,7 @@
  * ArchUnit tests in :bootstrap.
  */
 plugins {
-    id("org.springframework.boot") version "3.5.6" apply false
+    id("org.springframework.boot") version "4.0.7" apply false
 }
 
 subprojects {
