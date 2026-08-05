@@ -692,6 +692,25 @@ export function useCommit() {
     })
 }
 
+export interface GeneratedCommitMessage {
+    message: string
+}
+
+/**
+ * Asks the configured AI provider for a commit message describing what is
+ * staged. Nothing in the repository changes, so no query is invalidated; the
+ * caller decides what to do with the text.
+ */
+export function useGenerateCommitMessage() {
+    return useMutation({
+        mutationFn: (repositoryId: string) =>
+            apiFetch<GeneratedCommitMessage>(
+                `/repositories/${repositoryId}/ai/commit-message`,
+                {method: 'POST'},
+            ),
+    })
+}
+
 export interface SaveStashPayload {
     repositoryId: string
     message?: string
