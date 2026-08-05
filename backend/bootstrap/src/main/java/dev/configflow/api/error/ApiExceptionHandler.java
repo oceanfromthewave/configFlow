@@ -1,5 +1,6 @@
 package dev.configflow.api.error;
 
+import dev.configflow.domain.ai.AiProviderException;
 import dev.configflow.domain.vcs.exception.MergeConflictException;
 import dev.configflow.domain.vcs.exception.VcsAuthenticationRequiredException;
 import dev.configflow.domain.vcs.exception.VcsNetworkException;
@@ -98,6 +99,17 @@ public class ApiExceptionHandler
 	public ProblemDetail handleNetwork(VcsNetworkException e)
 	{
 		return problem(HttpStatus.BAD_GATEWAY, "vcs-network", OperationFailures.VCS_NETWORK_ERROR, "Could not reach the remote", e.getMessage());
+	}
+
+	/**
+	 * AI 제공자 호출이 실패했다. 원인과 무관하게 우리가 프록시 역할이라 502가 기본이고, 사용량 한도만 429로 그대로 넘긴다 — 사용자가 할 일이 "잠시 뒤 다시"로
+	 * 명확해서다.
+	 */
+	@ExceptionHandler(AiProviderException.class)
+	public ProblemDetail handleAiProvider(AiProviderException e)
+	{
+		HttpStatus status = e.reason() == AiProviderException.Reason.RATE_LIMITED ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_GATEWAY;
+		return problem(status, "ai-provider", OperationFailures.aiCode(e.reason()), "AI request failed", e.getMessage());
 	}
 
 	@ExceptionHandler(Exception.class)
