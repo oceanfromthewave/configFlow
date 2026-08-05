@@ -78,7 +78,7 @@ public final class CommitMessageService
 			render(repositories.diffWorking(id, change.path(), true), out);
 		}
 
-		if(out.length() > MAX_DIFF_CHARS)
+		if(out.length() >= MAX_DIFF_CHARS)
 		{
 			out.setLength(MAX_DIFF_CHARS);
 			out.append("\n[diff truncated]\n");
@@ -104,13 +104,24 @@ public final class CommitMessageService
 
 		for(DiffHunk hunk : diff.hunks())
 		{
+			// 파일 하나가 상한을 넘겨도 전체를 메모리에 쌓지 않는다. 잘라내기는
+			// 호출자가 하지만, 그 전에 이미 쌓인 양이 곧 힙 사용량이다.
+			if(out.length() >= MAX_DIFF_CHARS)
+			{
+				return;
+			}
 			out.append("@@ -").append(hunk.oldStart()).append(',').append(hunk.oldCount()).append(" +").append(hunk.newStart()).append(',')
 					.append(hunk.newCount()).append(" @@\n");
 			for(String line : hunk.lines())
 			{
+				if(out.length() >= MAX_DIFF_CHARS)
+				{
+					return;
+				}
 				out.append(line).append('\n');
 			}
 		}
+
 	}
 
 	/** Windows 백슬래시를 diff 표기에 맞게 정규화한다. */

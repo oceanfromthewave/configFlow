@@ -1,5 +1,6 @@
 package dev.configflow.domain.operation;
 
+import dev.configflow.domain.ai.AiProviderException;
 import dev.configflow.domain.vcs.exception.MergeConflictException;
 import dev.configflow.domain.vcs.exception.VcsAuthenticationRequiredException;
 import dev.configflow.domain.vcs.exception.VcsNetworkException;
@@ -25,6 +26,10 @@ public final class OperationFailures
 	public static final String MERGE_CONFLICT = "MERGE_CONFLICT";
 	public static final String VCS_AUTH_REQUIRED = "VCS_AUTH_REQUIRED";
 	public static final String VCS_NETWORK_ERROR = "VCS_NETWORK_ERROR";
+	public static final String AI_NETWORK_ERROR = "AI_NETWORK_ERROR";
+	public static final String AI_AUTH_FAILED = "AI_AUTH_FAILED";
+	public static final String AI_RATE_LIMITED = "AI_RATE_LIMITED";
+	public static final String AI_PROVIDER_ERROR = "AI_PROVIDER_ERROR";
 	public static final String CANCELLED = "CANCELLED";
 	public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
 
@@ -60,12 +65,25 @@ public final class OperationFailures
 
 			case VcsPreconditionException e -> OperationFailure.of(CONFLICT, describe(e));
 			case VcsNetworkException e -> OperationFailure.of(VCS_NETWORK_ERROR, describe(e));
+			case AiProviderException e -> OperationFailure.of(aiCode(e.reason()), describe(e));
 			case NoSuchElementException e -> OperationFailure.of(NOT_FOUND, describe(e));
 			case UnsupportedOperationException e -> OperationFailure.of(CAPABILITY_NOT_SUPPORTED, describe(e));
 			case IllegalArgumentException e -> OperationFailure.of(VALIDATION_ERROR, describe(e));
 
 			case null -> OperationFailure.of(INTERNAL_ERROR, "Unknown failure");
 			default -> OperationFailure.of(INTERNAL_ERROR, describe(error));
+		};
+	}
+
+	/** AI 제공자 실패 원인을 실패 코드로 옮긴다. API 계층과 이벤트 스트림이 같은 이름을 쓰도록. */
+	public static String aiCode(AiProviderException.Reason reason)
+	{
+		return switch(reason)
+		{
+			case NETWORK -> AI_NETWORK_ERROR;
+			case AUTH -> AI_AUTH_FAILED;
+			case RATE_LIMITED -> AI_RATE_LIMITED;
+			case PROVIDER_ERROR -> AI_PROVIDER_ERROR;
 		};
 	}
 
