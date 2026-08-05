@@ -106,7 +106,7 @@ class CommitMessageServiceTest
 	}
 
 	@Test
-	void generate_marksDeletedAndAddedSidesAsDevNull()
+	void generate_marksDeletedFileNewSideAsDevNull()
 	{
 		provider.diffType = ChangeType.DELETED;
 		stage(new FileChange(Paths.get("old.txt"), ChangeType.DELETED, null, false, null));
@@ -115,6 +115,34 @@ class CommitMessageServiceTest
 
 		assertTrue(ai.received.unifiedDiff().contains("+++ /dev/null"));
 		assertTrue(ai.received.unifiedDiff().contains("--- a/old.txt"));
+	}
+
+	@Test
+	void generate_marksAddedFileOldSideAsDevNull()
+	{
+		provider.diffType = ChangeType.ADDED;
+		stage(new FileChange(Paths.get("new.txt"), ChangeType.ADDED, null, false, null));
+
+		service.generate(id);
+
+		assertTrue(ai.received.unifiedDiff().contains("--- /dev/null"));
+		assertTrue(ai.received.unifiedDiff().contains("+++ b/new.txt"));
+	}
+
+	@Test
+	void generate_truncatesDiffsPastTheCharacterLimit()
+	{
+		// CommitMessageService.MAX_DIFF_CHARS is private; mirror it here rather
+		// than reflecting into the field.
+		int maxDiffChars = 100_000;
+		provider.hunkLines = List.of("+" + "x".repeat(maxDiffChars + 5_000));
+		stage(modified(Paths.get("huge.txt")));
+
+		service.generate(id);
+
+		String sent = ai.received.unifiedDiff();
+		assertTrue(sent.endsWith("[diff truncated]\n"));
+		assertEquals(maxDiffChars + "\n[diff truncated]\n".length(), sent.length());
 	}
 
 	@Test

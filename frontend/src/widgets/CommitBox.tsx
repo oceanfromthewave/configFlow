@@ -55,8 +55,16 @@ export function CommitBox() {
 
     function generateMessage() {
         if (!canGenerate) return
+        // The user may keep typing while the request is in flight; only apply
+        // the generated text if the textarea is still exactly what it was
+        // when the request started, so we never clobber their edits.
+        const messageAtRequestStart = message
         generate.mutate(repositoryId!, {
-            onSuccess: (result) => setMessage(result.message),
+            onSuccess: (result) => {
+                setMessage((current) =>
+                    current === messageAtRequestStart ? result.message : current,
+                )
+            },
         })
     }
 
@@ -121,13 +129,13 @@ export function CommitBox() {
             ) : null}
 
             {generate.isError ? (
-                <p className="text-xs text-vcs-deleted">
+                <p role="status" aria-live="polite" className="text-xs text-vcs-deleted">
                     {t('commit.generateFailed')}: {t(apiErrorKey(generate.error))}
                 </p>
             ) : null}
 
             {commit.isError ? (
-                <p className="text-xs text-vcs-deleted">
+                <p role="status" aria-live="polite" className="text-xs text-vcs-deleted">
                     {t('commit.failed')}: {t(apiErrorKey(commit.error))}
                 </p>
             ) : null}
