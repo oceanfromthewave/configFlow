@@ -19,6 +19,6 @@ dependencies {
     // net.i2p or BouncyCastle (its JDK path is not wired in), and BouncyCastle is the
     // maintained of the two.
     implementation("org.apache.sshd:sshd-osgi:2.19.0")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.85.2")
 }

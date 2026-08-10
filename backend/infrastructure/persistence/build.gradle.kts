@@ -9,5 +9,5 @@ plugins {
 dependencies {
     implementation(project(":domain"))
     implementation("org.xerial:sqlite-jdbc:3.53.2.1")
-    implementation("org.flywaydb:flyway-core:13.1.0")
+    implementation("org.flywaydb:flyway-core:13.2.0")
 }
