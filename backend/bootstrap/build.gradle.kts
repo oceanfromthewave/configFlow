@@ -27,5 +27,5 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-resttestclient")
     // TestRestTemplate 자동 설정이 RestTemplateBuilder를 요구하므로 restclient도 필요하다.
     testImplementation("org.springframework.boot:spring-boot-restclient")
-    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.2")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
 }
