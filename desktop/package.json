@@ -16,9 +16,9 @@
     "release": "npm run build:backend && npm run build:frontend && npm run build:jre && npm run package"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "electron": "^43.2.0",
-    "electron-builder": "^26.15.3",
+    "@types/node": "^26.6.5",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "typescript": "^7.0.2"
   }
 }
