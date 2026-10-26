@@ -6,7 +6,7 @@
  * ArchUnit tests in :bootstrap.
  */
 plugins {
-    id("org.springframework.boot") version "4.0.7" apply false
+    id("org.springframework.boot") version "4.1.2" apply false
 }
 
 subprojects {
@@ -39,7 +39,7 @@ subprojects {
     }
 
     dependencies {
-        "testImplementation"(platform("org.junit:junit-bom:5.11.4"))
+        "testImplementation"(platform("org.junit:junit-bom:6.1.3"))
         "testImplementation"("org.junit.jupiter:junit-jupiter")
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
